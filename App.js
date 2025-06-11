@@ -3,15 +3,20 @@ import {StatusBar} from 'react-native';
 import {NavigationContainer} from '@react-navigation/native';
 import {createStackNavigator} from '@react-navigation/stack';
 
-// Import screens
+// Import screens path
 import LoginScreen from './src/screens/auth/LoginScreen.js';
-import DashboardScreen from './src/screens/auth/DashboardScreen.js';
+import DashboardScreen from './src/screens/dashboard/DashboardScreen.js';
 
 const Stack = createStackNavigator();
 
 const App = () => {
   return (
     <NavigationContainer>
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor="#FFD700"
+        translucent={false}
+      />
       <Stack.Navigator
         initialRouteName="Login"
         screenOptions={{

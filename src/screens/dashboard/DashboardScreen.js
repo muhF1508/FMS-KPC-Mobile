@@ -10,30 +10,72 @@ import {
   Modal,
 } from 'react-native';
 
+// Import content components
+import DashboardContent from '../../components/DashboardContent';
+import WorkContent from '../../components/WorkContent';
+import DelayContent from '../../components/DelayContent';
+import IdleContent from '../../components/IdleContent';
+import MTContent from '../../components/MTContent';
+
 const DashboardScreen = ({route, navigation}) => {
   // Data dari LoginScreen.js
   const {selectedAction, formData, currentTimer} = route?.params || {};
 
-  const timerFromLogin = currentTimer || '00:00:00';
+  // State untuk tab navigation
+  const [activeTab, setActiveTab] = useState('dashboard');
 
-  // State untuk Dashboard
-  const [hmAwal, setHmAwal] = useState('');
-  const [isHmAwalSet, setIsHmAwalSet] = useState(false);
-  const [hmAkhir, setHmAkhir] = useState('');
+  // Global state yang bisa diakses semua content components
+  const [globalData, setGlobalData] = useState({
+    // Data dari login
+    selectedAction: selectedAction || 'SHIFT CHANGE',
+    formData: formData || {},
+    currentTimer: currentTimer || '00:00:00',
 
-  // State untuk menampilkan modal popup Hm Awal
-  const [showHmAwalModal, setShowHmAwalModal] = useState(true);
+    // Data dasboard
+    hmAwal: '',
+    hmAkhir: '',
+    isHmAwalSet: false,
 
-  const [dashboardData, setDashboardData] = useState({
+    // Data dari berbagai content
+    delayData: {
+      activeCode: null,
+      activeName: '',
+      startTime: '',
+      endTime: '',
+      isActive: false,
+      reason: '',
+      duration: '00:00:00',
+    },
+    workData: {
+      loads: 0,
+      productivity: '0 bcm/h',
+      hours: '0.00',
+    },
+    idleData: {
+      reason: '',
+      description: '',
+      startTime: '',
+      endTime: '',
+      isActive: false,
+      duration: '00:00:00',
+    },
+    mtData: {
+      type: '',
+      description: '',
+      status: '',
+      startTime: '',
+      endTime: '',
+      isActive: false,
+      duration: '00:00:00',
+    },
+
+    // Dashboard info
     welcomeId: formData?.id || '18971',
     shiftType: 'Shift Day',
-    productivity: '0 bcm/h',
     status: selectedAction || 'SHIFT CHANGE',
-    loads: 0,
-    hours: '0.00',
     currentDate: new Date().toLocaleDateString('en-GB', {
       day: '2-digit',
-      month: 'short',
+      month: 'long',
       year: 'numeric',
     }),
     currentTime: new Date().toLocaleTimeString('en-GB', {
@@ -42,20 +84,29 @@ const DashboardScreen = ({route, navigation}) => {
     }),
   });
 
+  // State untuk menampilkan modal popup Hm Awal
+  const [showHmAwalModal, setShowHmAwalModal] = useState(true);
+
+  const updateGlobalData = newData => {
+    setGlobalData(prev => ({
+      ...prev,
+      ...newData,
+    }));
+  };
+
   const handleHmAwalSubmit = () => {
-    if (!hmAwal || hmAwal.trim() === '') {
+    if (!globalData.hmAwal || globalData.hmAwal.trim() === '') {
       Alert.alert('Error', 'Silakan Masukkan HM Awal');
       return;
     }
-    setIsHmAwalSet(true);
+    updateGlobalData({isHmAwalSet: true});
     setShowHmAwalModal(false);
-    Alert.alert('Success', `HM Awal ${hmAwal} telah disimpan`);
+    Alert.alert('Success', `HM Awal ${globalData.hmAwal} telah disimpan`);
   };
 
   // Navigation handlers
-  const handleNavigation = destination => {
-    // untuk saat ini hanya menampilkan alert
-    Alert.alert('Navigation', `Navigating to ${destination} page`);
+  const handleTabNavigation = tabName => {
+    setActiveTab(tabName.toLowerCase());
   };
 
   const handleAkhirShift = () => {
@@ -69,16 +120,52 @@ const DashboardScreen = ({route, navigation}) => {
   const getStatusColor = status => {
     switch (status) {
       case 'SAFETY TALK':
-        return '#4CAF50'; // Green
+        return '#4CAF50'; // GREEN
       case 'RAIN':
         return '#2196F3'; // BLUE
       case 'BREAKDOWN':
         return '#FF9800'; // ORANGE
       case 'SHIFT CHANGE':
         return '#00BCD4'; // GREEN
+      case 'WORK':
+        return '#4CAF50';
+      case 'DELAY':
+        return '#FF5722';
+      case 'IDLE':
+        return '#9E9E9E';
+      case 'MT':
+        return '#673AB7';
       default:
-        return '#00BCD4'; // Blue
+        return '#00BCD4'; // BLUE
     }
+  };
+
+  // Render content berdasarkan active tab
+  const renderContent = () => {
+    const contentProps = {
+      globalData,
+      updateGlobalData,
+      setActiveTab,
+    };
+
+    switch (activeTab) {
+      case 'work':
+        return <WorkContent {...contentProps} />;
+      case 'delay':
+        return <DelayContent {...contentProps} />;
+      case 'idle':
+        return <IdleContent {...contentProps} />;
+      case 'mt':
+        return <MTContent {...contentProps} />;
+      default:
+        return <DashboardContent {...contentProps} />;
+    }
+  };
+
+  // Get active tab title for status
+  const getActiveTabStatus = () => {
+    if (activeTab === 'dashboard') return globalData.selectedAction;
+    return activeTab.toUpperCase();
   };
 
   return (
@@ -89,14 +176,14 @@ const DashboardScreen = ({route, navigation}) => {
         <View style={styles.topRow}>
           <View style={styles.leftColumn}>
             <Text style={styles.welcomeLabel}>Welcome :</Text>
-            <Text style={styles.welcomeValue}>{dashboardData.welcomeId}</Text>
-            <Text style={styles.shiftValue}>{dashboardData.shiftType}</Text>
+            <Text style={styles.welcomeValue}>{globalData.welcomeId}</Text>
+            <Text style={styles.shiftValue}>{globalData.shiftType}</Text>
           </View>
 
           <View style={styles.centerColumn}>
             <Text style={styles.productivityLabel}>Productivity :</Text>
             <Text style={styles.productivityValue}>
-              {dashboardData.productivity}
+              {globalData.workData.productivity}
             </Text>
           </View>
 
@@ -105,9 +192,9 @@ const DashboardScreen = ({route, navigation}) => {
             <Text
               style={[
                 styles.statusValue,
-                {color: getStatusColor(dashboardData.status)},
+                {color: getStatusColor(getActiveTabStatus())},
               ]}>
-              {dashboardData.status}
+              {getActiveTabStatus()}
             </Text>
           </View>
         </View>
@@ -116,29 +203,32 @@ const DashboardScreen = ({route, navigation}) => {
         <View style={styles.bottomRow}>
           <View style={styles.leftColumn}>
             <Text style={styles.infoText}>
-              Unit: {formData?.unitNumber || 'N/A'}
+              Unit: {globalData.formData?.unitNumber || 'N/A'}
             </Text>
-            <Text style={styles.infoText}>{hmAwal || '0'} Hm Awal</Text>
+            <Text style={styles.infoText}>
+              {globalData.hmAwal || '0'} Hm Awal
+            </Text>
           </View>
 
           <View style={styles.centerColumn}>
             <Text style={styles.infoText}>
-              {dashboardData.loads} Load(s) | {dashboardData.hours} hour(s)
+              {globalData.workData.loads} Load(s) | {globalData.workData.hours}{' '}
+              hour(s)
             </Text>
             <Text style={styles.infoText}>
-              {dashboardData.currentDate} {dashboardData.currentTime}
+              {globalData.currentDate} {globalData.currentTime}
             </Text>
           </View>
 
           <View style={styles.rightColumn}>
-            <Text style={styles.timerText}>{timerFromLogin}</Text>
+            <Text style={styles.timerText}>{globalData.currentTimer}</Text>
           </View>
         </View>
       </View>
 
       {/* Modal popup blocking untuk input Hm Awal (WAJIB DIISI) */}
       <Modal
-        visible={showHmAwalModal && !isHmAwalSet}
+        visible={showHmAwalModal && !globalData.isHmAwalSet}
         transparent={true}
         animationType="fade"
         statusBarTranslucent={true}
@@ -154,8 +244,8 @@ const DashboardScreen = ({route, navigation}) => {
               style={styles.modalInput}
               placeholder="Contoh 1200"
               placeholderTextColor="#999"
-              value={hmAwal}
-              onChangeText={setHmAwal}
+              value={globalData.hmAwal}
+              onChangeText={text => updateGlobalData({hmAwal: text})}
               keyboardType="numeric"
               autoFocus={true}
             />
@@ -169,53 +259,98 @@ const DashboardScreen = ({route, navigation}) => {
         </View>
       </Modal>
 
-      {/* Main Content Section */}
-      <View style={styles.mainContent}>
-        <Text style={styles.mainContentText}>
-          Unit: {formData?.unitNumber || 'N/A'} | Work Type:{' '}
-          {formData?.workType || 'N/A'}
-        </Text>
-        <Text style={styles.mainContentSubText}>
-          Dashboard content akan ditampilkan disini
-        </Text>
+      {/* Dynamic Main Content Area - based on active tab */}
+      <View style={styles.contentArea}>{renderContent()}</View>
+
+      {/* NEW: Global delay code input - always visible above bottom navigation */}
+      <View style={styles.globalDelayInputContainer}>
+        <Text style={styles.delayInputLabel}>Delay Code:</Text>
+        <View style={styles.delayInputRow}>
+          <TextInput
+            style={styles.delayCodeInput}
+            placeholder="001, 004, 005, 006, 007"
+            placeholderTextColor="#999"
+            keyboardType="numeric"
+            maxLength={3}
+          />
+          <TouchableOpacity style={styles.delayStartButton}>
+            <Text style={styles.delayStartButtonText}>START</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Bottom Navigation Section */}
+      {/* Bottom Navigation Section  - Always visible */}
       <View style={styles.bottomNavigation}>
         <TouchableOpacity
-          style={styles.navButton}
-          onPress={() => handleNavigation('WORK')}>
+          style={[
+            styles.navButton,
+            activeTab === 'work' && styles.activeNavButton,
+          ]}
+          onPress={() => handleTabNavigation('WORK')}>
           <View style={styles.navIcon}>
             <Text style={styles.navIconText}>⚙️</Text>
           </View>
-          <Text style={styles.navLabel}>WORK</Text>
+          <Text
+            style={[
+              styles.navLabel,
+              activeTab === 'work' && styles.activeNavLabel,
+            ]}>
+            WORK
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.navButton}
-          onPress={() => handleNavigation('DELAY')}>
+          style={[
+            styles.navButton,
+            activeTab === 'delay' && styles.activeNavButton,
+          ]}
+          onPress={() => handleTabNavigation('DELAY')}>
           <View style={styles.navIcon}>
             <Text style={styles.navIconText}>⏱️</Text>
           </View>
-          <Text style={styles.navLabel}>DELAY</Text>
+          <Text
+            style={[
+              styles.navLabel,
+              activeTab === 'delay' && styles.activeNavLabel,
+            ]}>
+            DELAY
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.navButton}
-          onPress={() => handleNavigation('IDLE')}>
+          style={[
+            styles.navButton,
+            activeTab === 'idle' && styles.activeNavButton,
+          ]}
+          onPress={() => handleTabNavigation('IDLE')}>
           <View style={styles.navIcon}>
             <Text style={styles.navIconText}>⏸️</Text>
           </View>
-          <Text style={styles.navLabel}>IDLE</Text>
+          <Text
+            style={[
+              styles.navLabel,
+              activeTab === 'idle' && styles.activeNavLabel,
+            ]}>
+            IDLE
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.navButton}
-          onPress={() => handleNavigation('MT')}>
+          style={[
+            styles.navButton,
+            activeTab === 'mt' && styles.activeNavButton,
+          ]}
+          onPress={() => handleTabNavigation('MT')}>
           <View style={styles.navIcon}>
             <Text style={styles.navIconText}>📋</Text>
           </View>
-          <Text style={styles.navLabel}>MT</Text>
+          <Text
+            style={[
+              styles.navLabel,
+              activeTab === 'mt' && styles.activeNavLabel,
+            ]}>
+            MT
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -285,9 +420,6 @@ const styles = StyleSheet.create({
     fontSize: 25,
     fontWeight: 'bold',
     color: '#333',
-  },
-  statusSection: {
-    alignItems: 'flex-end',
   },
   statusLabel: {
     fontSize: 20,
@@ -363,23 +495,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  mainContent: {
+  // Content area - dynamic content
+  contentArea: {
     flex: 1,
-    padding: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  mainContentText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  mainContentSubText: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
   },
   bottomNavigation: {
     flexDirection: 'row',
@@ -402,6 +520,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
   },
+  activeNavButton: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 8,
+  },
   navIcon: {
     width: 30,
     height: 30,
@@ -416,6 +538,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
     color: '#333',
+  },
+  activeNavLabel: {
+    color: '#2196F3',
   },
   akhirShiftButton: {
     backgroundColor: '#F44336',
@@ -432,6 +557,50 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     lineHeight: 14,
+  },
+  // NEW: Global delay code input styles
+  globalDelayInputContainer: {
+    backgroundColor: 'white',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  delayInputLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    marginRight: 10,
+  },
+  delayInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  delayCodeInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    backgroundColor: '#fafafa',
+    marginRight: 8,
+    textAlign: 'center',
+    width: 120,
+  },
+  delayStartButton: {
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  delayStartButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });
 
