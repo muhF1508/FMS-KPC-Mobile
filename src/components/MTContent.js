@@ -93,10 +93,10 @@ const MTContent = ({globalData, updateGlobalData, setActiveTab}) => {
           />
         </View>
 
-        <Text style={styles.label}>Deskripsi Pekerjaan:</Text>
+        <Text style={styles.label}>Isi HM Akhir:</Text>
         <TextInput
           style={styles.textInput}
-          placeholder="Masukkan detail pekerjaan maintenance..."
+          placeholder="Masukkan Hm Akhir..."
           placeholderTextColor="#999"
           value={mtDescription}
           onChangeText={setMtDescription}

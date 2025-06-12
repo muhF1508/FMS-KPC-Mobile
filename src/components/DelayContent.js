@@ -69,7 +69,7 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
     // Set aktivitas yang aktif
     setActiveActivity(activityCode);
 
-    // Start new interval untuk aktivitas yang dipili
+    // Start new interval untuk aktivitas yang dipilih
     intervalRef.current = setInterval(() => {
       secondsRef.current[activityCode] += 1;
       const formattedTime = formatTime(secondsRef.current[activityCode]);
@@ -86,8 +86,7 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
         activeName: delayActivities.find(act => act.code === activityCode)
           ?.name,
         startTime:
-          new Date().toLocaleTimeString('en-US', {
-            timeZone: 'Asia/Makassar',
+          new Date().toLocaleTimeString('id-ID', {
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
@@ -141,7 +140,6 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
         isActive: false,
         endTime:
           new Date().toLocaleTimeString('en-US', {
-            timeZone: 'Asia/Makassar',
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',

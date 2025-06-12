@@ -73,19 +73,60 @@ const DashboardScreen = ({route, navigation}) => {
     welcomeId: formData?.id || '18971',
     shiftType: 'Shift Day',
     status: selectedAction || 'SHIFT CHANGE',
-    currentDate: new Date().toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-    }),
-    currentTime: new Date().toLocaleTimeString('en-GB', {
-      hour: '2-digit',
-      minute: '2-digit',
-    }),
+  });
+
+  // Real-time date/time state
+  const [currentDateTime, setCurrentDateTime] = useState({
+    date: '',
+    time: '',
   });
 
   // State untuk menampilkan modal popup Hm Awal
   const [showHmAwalModal, setShowHmAwalModal] = useState(true);
+
+  useEffect(() => {
+    console.log('=== DATETIME USEEFFECT STARTED ===');
+
+    const updateDateTime = () => {
+      console.log('=== UPDATE FUNCTION CALLED ===');
+      const now = new Date();
+      console.log('Current time:', now.toString());
+
+      const formattedDate = now.toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      });
+
+      const formattedTime =
+        now.toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        }) + ' WITA';
+
+      console.log('Aboud to set state:', formattedDate, formattedTime);
+
+      setCurrentDateTime({
+        date: formattedDate,
+        time: formattedTime,
+      });
+
+      console.log('State set completed');
+    };
+
+    // Update immediately
+    updateDateTime();
+    console.log('Setting interval...');
+    // Update every second
+    const interval = setInterval(updateDateTime, 1000);
+
+    // Cleanup
+    return () => {
+      console.log('Cleaning up interval');
+      clearInterval(interval);
+    };
+  }, []);
 
   const updateGlobalData = newData => {
     setGlobalData(prev => ({
@@ -216,7 +257,7 @@ const DashboardScreen = ({route, navigation}) => {
               hour(s)
             </Text>
             <Text style={styles.infoText}>
-              {globalData.currentDate} {globalData.currentTime}
+              {currentDateTime.date} {currentDateTime.time}
             </Text>
           </View>
 
@@ -225,7 +266,6 @@ const DashboardScreen = ({route, navigation}) => {
           </View>
         </View>
       </View>
-
       {/* Modal popup blocking untuk input Hm Awal (WAJIB DIISI) */}
       <Modal
         visible={showHmAwalModal && !globalData.isHmAwalSet}
@@ -258,10 +298,8 @@ const DashboardScreen = ({route, navigation}) => {
           </View>
         </View>
       </Modal>
-
       {/* Dynamic Main Content Area - based on active tab */}
       <View style={styles.contentArea}>{renderContent()}</View>
-
       {/* NEW: Global delay code input - always visible above bottom navigation */}
       <View style={styles.globalDelayInputContainer}>
         <Text style={styles.delayInputLabel}>Delay Code:</Text>
@@ -278,7 +316,6 @@ const DashboardScreen = ({route, navigation}) => {
           </TouchableOpacity>
         </View>
       </View>
-
       {/* Bottom Navigation Section  - Always visible */}
       <View style={styles.bottomNavigation}>
         <TouchableOpacity
