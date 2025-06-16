@@ -50,6 +50,17 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
     };
   }, []);
 
+  useEffect(() => {
+    if (globalData.autoStartDelay006) {
+      console.log('Auto-starting delay 006 Wait on Truck');
+      startActivityTimer('006');
+
+      updateGlobalData({
+        autoStartDelay006: false,
+      });
+    }
+  }, [globalData.autoStartDelay006]);
+
   const formatTime = totalSeconds => {
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);

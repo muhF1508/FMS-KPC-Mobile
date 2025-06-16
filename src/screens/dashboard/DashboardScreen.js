@@ -197,7 +197,7 @@ const DashboardScreen = ({route, navigation}) => {
       case 'idle':
         return <IdleContent {...contentProps} />;
       case 'mt':
-        return <MTContent {...contentProps} />;
+        return <MTContent {...contentProps} navigation={navigation} />;
       default:
         return <DashboardContent {...contentProps} />;
     }

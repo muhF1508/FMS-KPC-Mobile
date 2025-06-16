@@ -6,190 +6,219 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
+  Modal,
   ScrollView,
 } from 'react-native';
-import RNPickerSelect from 'react-native-picker-select';
 
-const MTContent = ({globalData, updateGlobalData, setActiveTab}) => {
-  const [mtType, setMtType] = useState('');
-  const [mtDescription, setMtDescription] = useState('');
-  const [mtStatus, setMtStatus] = useState('');
+const MTContent = ({
+  globalData,
+  updateGlobalData,
+  setActiveTab,
+  navigation,
+}) => {
+  const [showHmAkhirModal, setShowHmAkhirModal] = useState(false);
+  const [selectedMaintenanceType, setSelectedMaintenanceType] = useState('');
+  const [hmAkhir, setHmAkhir] = useState('');
 
-  const mtTypes = [
-    {label: 'Preventive Maintenance', value: 'PREVENTIVE'},
-    {label: 'Corrective Maintenance', value: 'CORRECTIVE'},
-    {label: 'Emergency Repair', value: 'EMERGENCY'},
-    {label: 'Inspection', value: 'INSPECTION'},
-    {label: 'Lubrication', value: 'LUBRICATION'},
+  const maintenanceTypes = [
+    {
+      type: 'BREAKDOWN',
+      name: 'BREAKDOWN',
+      subtitle: 'Unschedule Maintenance', // Fixed typo: Unchedule → Unschedule
+      color: '#F44336',
+      icon: '🔧',
+    },
+    {
+      type: 'SCHEDULE',
+      name: 'SCHEDULE MAINTENANCE',
+      subtitle: 'Planned Maintenance',
+      color: '#2196F3',
+      icon: '📅',
+    },
   ];
 
-  const mtStatuses = [
-    {label: 'Dimulai', value: 'STARTED'},
-    {label: 'Dalam Progress', value: 'IN_PROGRESS'},
-    {label: 'Selesai', value: 'COMPLETED'},
-    {label: 'Pending', value: 'PENDING'},
-  ];
-
-  const handleStartMT = () => {
-    if (!mtType || !mtDescription) {
-      Alert.alert('Error', 'Pilih tipe MT dan isi deskripsi');
-      return;
-    }
-
-    updateGlobalData({
-      mtData: {
-        type: mtType,
-        description: mtDescription,
-        status: 'STARTED',
-        startTime: new Date().toLocaleTimeString(),
-        isActive: true,
-      },
-    });
-
-    Alert.alert('Success', 'Maintenance telah dimulai');
+  const handleMaintenanceButton = maintenanceType => {
+    // Fixed parameter name
+    setSelectedMaintenanceType(maintenanceType);
+    setShowHmAkhirModal(true);
   };
 
-  const handleUpdateMTStatus = () => {
-    if (!mtStatus) {
-      Alert.alert('Error', 'Pilih status MT');
+  const handleHmAkhirSubmit = () => {
+    if (!hmAkhir || hmAkhir.trim() === '') {
+      Alert.alert('Error', 'Silakan Masukkan HM Akhir');
       return;
     }
 
+    // Update global data dengan maintenance info
     updateGlobalData({
       mtData: {
-        ...globalData.mtData,
-        status: mtStatus,
+        type: selectedMaintenanceType.type,
+        name: selectedMaintenanceType.name,
+        hmAkhir: hmAkhir,
         endTime:
-          mtStatus === 'COMPLETED' ? new Date().toLocaleTimeString() : null,
-        isActive: mtStatus !== 'COMPLETED',
+          new Date().toLocaleTimeString('en-US', {
+            // Fixed locale format
+            timeZone: 'Asia/Makassar',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true,
+          }) + ' WITA',
+        isCompleted: true,
       },
     });
 
-    Alert.alert('Success', `Status MT diupdate menjadi ${mtStatus}`);
+    setShowHmAkhirModal(false);
 
-    if (mtStatus === 'COMPLETED') {
-      setActiveTab('dashboard');
-    }
+    Alert.alert(
+      'Maintenance Selesai',
+      `${selectedMaintenanceType.name} telah selesai\nHM Akhir: ${hmAkhir}`, // Fixed typo: AKhir → Akhir
+      [
+        {
+          text: 'OK',
+          onPress: () => {
+            // Reset form
+            setHmAkhir('');
+            setSelectedMaintenanceType('');
+
+            // Navigate back to Login
+            navigation.navigate('Login');
+          },
+        },
+      ],
+    );
+  };
+
+  const handleModalClose = () => {
+    setShowHmAkhirModal(false);
+    setSelectedMaintenanceType('');
+    setHmAkhir('');
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.title}>Maintenance (MT) Management</Text>
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <Text style={styles.title}>Maintenance (MT)</Text>
 
-      <View style={styles.formContainer}>
-        <Text style={styles.label}>Tipe Maintenance:</Text>
-        <View style={styles.pickerContainer}>
-          <RNPickerSelect
-            onValueChange={setMtType}
-            items={mtTypes}
-            placeholder={{
-              label: 'Pilih tipe maintenance...',
-              value: null,
-              color: '#999',
-            }}
-            value={mtType}
-            style={pickerSelectStyles}
-            disabled={globalData.mtData?.isActive}
-          />
-        </View>
-
-        <Text style={styles.label}>Isi HM Akhir:</Text>
-        <TextInput
-          style={styles.textInput}
-          placeholder="Masukkan Hm Akhir..."
-          placeholderTextColor="#999"
-          value={mtDescription}
-          onChangeText={setMtDescription}
-          multiline={true}
-          numberOfLines={4}
-          editable={!globalData.mtData?.isActive}
-        />
-
-        {!globalData.mtData?.isActive ? (
-          <TouchableOpacity style={styles.startButton} onPress={handleStartMT}>
-            <Text style={styles.buttonText}>Mulai Maintenance</Text>
-          </TouchableOpacity>
-        ) : (
-          <View>
-            <View style={styles.activeMTContainer}>
-              <Text style={styles.activeMTText}>
-                🔧 MT Aktif: {globalData.mtData.type}
-              </Text>
-              <Text style={styles.activeMTDescription}>
-                {globalData.mtData.description}
-              </Text>
-              <Text style={styles.activeMTTime}>
-                Dimulai: {globalData.mtData.startTime}
-              </Text>
-              <Text style={styles.activeMTStatus}>
-                Status: {globalData.mtData.status}
-              </Text>
-            </View>
-
-            <Text style={styles.label}>Update Status:</Text>
-            <View style={styles.pickerContainer}>
-              <RNPickerSelect
-                onValueChange={setMtStatus}
-                items={mtStatuses}
-                placeholder={{
-                  label: 'Pilih status...',
-                  value: null,
-                  color: '#999',
-                }}
-                value={mtStatus}
-                style={pickerSelectStyles}
-              />
-            </View>
-
-            <TouchableOpacity
-              style={styles.updateButton}
-              onPress={handleUpdateMTStatus}>
-              <Text style={styles.buttonText}>Update Status</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+      {/* Info Section */}
+      <View style={styles.infoContainer}>
+        <Text style={styles.infoTitle}>Pilih Tipe Maintenance</Text>
+        <Text style={styles.infoText}>
+          Pilih jenis maintenance yang akan dilakukan, kemudian masukkan HM
+          Akhir untuk menyelesaikan shift.
+        </Text>
       </View>
 
-      {/* MT History/Log Section */}
-      <View style={styles.historyContainer}>
-        <Text style={styles.historyTitle}>Riwayat MT Hari Ini</Text>
-        <View style={styles.historyItem}>
-          <Text style={styles.historyText}>
-            Belum ada riwayat maintenance untuk hari ini
+      {/* Maintenance Type Buttons */}
+      <View style={styles.buttonsContainer}>
+        <Text style={styles.sectionTitle}>Tipe Maintenance:</Text>
+
+        {maintenanceTypes.map((maintenance, index) => (
+          <View key={maintenance.type} style={styles.buttonCard}>
+            <TouchableOpacity
+              style={[
+                styles.maintenanceButton,
+                {backgroundColor: maintenance.color},
+              ]}
+              onPress={() => handleMaintenanceButton(maintenance)}
+              activeOpacity={0.8}>
+              {/* Left Side: Icon + Name */}
+              <View style={styles.leftContent}>
+                <Text style={styles.maintenanceIcon}>{maintenance.icon}</Text>
+                <View style={styles.textContent}>
+                  <Text style={styles.maintenanceName}>{maintenance.name}</Text>
+                  <Text style={styles.maintenanceSubtitle}>
+                    {' '}
+                    {/* Fixed typo: maintenace → maintenance */}
+                    {maintenance.subtitle}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Right Side: Arrow */}
+              <View style={styles.rightContent}>
+                <Text style={styles.arrowIcon}>▶</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        ))}
+      </View>
+
+      {/* Current Session Info */}
+      <View style={styles.sessionContainer}>
+        <Text style={styles.sessionTitle}>Informasi Sesi Saat Ini</Text>
+        <View style={styles.sessionInfo}>
+          <Text style={styles.sessionText}>
+            Operator: {globalData.welcomeId}
+          </Text>
+          <Text style={styles.sessionText}>
+            Unit: {globalData.formData?.unitNumber || 'N/A'}
+          </Text>
+          <Text style={styles.sessionText}>
+            HM Awal: {globalData.hmAwal || 'N/A'}
+          </Text>
+          <Text style={styles.sessionText}>
+            Durasi Shift: {globalData.currentTimer}
           </Text>
         </View>
       </View>
+
+      {/* Modal HM Akhir */}
+      <Modal
+        visible={showHmAkhirModal}
+        transparent={true}
+        animationType="fade"
+        statusBarTranslucent={true}
+        onRequestClose={handleModalClose}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>
+              {selectedMaintenanceType.name}
+            </Text>
+            <Text style={styles.modalSubtitle}>
+              Masukkan Hour Meter akhir untuk menyelesaikan maintenance
+            </Text>
+
+            <View style={styles.hmInfoContainer}>
+              <Text style={styles.hmInfoText}>
+                HM Awal: {globalData.hmAwal || 'N/A'}
+              </Text>
+            </View>
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Contoh: 1250"
+              placeholderTextColor="#999"
+              value={hmAkhir}
+              onChangeText={setHmAkhir}
+              keyboardType="numeric"
+              autoFocus={true}
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={handleModalClose}>
+                <Text style={styles.modalCancelText}>Batal</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.modalSubmitButton}
+                onPress={handleHmAkhirSubmit}>
+                <Text style={styles.modalSubmitText}>Selesai</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
 
-const pickerSelectStyles = StyleSheet.create({
-  inputIOS: {
-    fontSize: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 15,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    color: '#333',
-    backgroundColor: '#fafafa',
-  },
-  inputAndroid: {
-    fontSize: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 15,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    color: '#333',
-    backgroundColor: '#fafafa',
-  },
-});
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
+    padding: 15,
+    backgroundColor: '#f5f5f5',
   },
   title: {
     fontSize: 24,
@@ -198,27 +227,155 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
   },
-  formContainer: {
-    backgroundColor: 'white',
+  infoContainer: {
+    backgroundColor: '#E3F2FD',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#2196F3',
+  },
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1976D2',
+    marginBottom: 5,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#1565C0',
+    lineHeight: 20,
+  },
+  buttonsContainer: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 15,
+  },
+  buttonCard: {
+    marginBottom: 15,
+  },
+  maintenanceButton: {
+    borderRadius: 12,
     padding: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  leftContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  maintenanceIcon: {
+    fontSize: 32,
+    marginRight: 15,
+  },
+  textContent: {
+    flex: 1,
+  },
+  maintenanceName: {
+    fontSize: 18,
+    color: 'white',
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  maintenanceSubtitle: {
+    // Fixed style name
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontStyle: 'italic',
+  },
+  rightContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arrowIcon: {
+    fontSize: 20,
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  sessionContainer: {
+    backgroundColor: 'white',
+    padding: 15,
     borderRadius: 12,
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-    marginBottom: 20,
   },
-  label: {
+  sessionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
+    marginBottom: 10,
+  },
+  sessionInfo: {
+    backgroundColor: '#f9f9f9',
+    padding: 10,
+    borderRadius: 8,
+  },
+  sessionText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 5,
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 25,
+    width: '90%',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
     marginBottom: 8,
+    textAlign: 'center',
   },
-  pickerContainer: {
-    marginBottom: 20,
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 15,
+    lineHeight: 20,
   },
-  textInput: {
+  hmInfoContainer: {
+    backgroundColor: '#E8F5E8',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 15,
+    width: '100%',
+  },
+  hmInfoText: {
+    fontSize: 14,
+    color: '#2E7D32',
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  modalInput: {
+    width: '100%',
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 8,
@@ -227,81 +384,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: '#fafafa',
     marginBottom: 20,
-    textAlignVertical: 'top',
+    textAlign: 'center',
   },
-  startButton: {
-    backgroundColor: '#673AB7',
-    paddingVertical: 15,
+  modalButtons: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 10,
+  },
+  modalCancelButton: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
   },
-  updateButton: {
-    backgroundColor: '#2196F3',
-    paddingVertical: 15,
+  modalSubmitButton: {
+    flex: 1,
+    backgroundColor: '#4CAF50',
+    paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
   },
-  buttonText: {
+  modalCancelText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  modalSubmitText: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  activeMTContainer: {
-    backgroundColor: '#EDE7F6',
-    padding: 15,
-    borderRadius: 8,
-    marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: '#673AB7',
-  },
-  activeMTText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#4527A0',
-  },
-  activeMTDescription: {
-    fontSize: 14,
-    color: '#333',
-    marginTop: 5,
-    fontStyle: 'italic',
-  },
-  activeMTTime: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 5,
-  },
-  activeMTStatus: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 5,
-    fontWeight: 'bold',
-  },
-  historyContainer: {
-    backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  historyTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 15,
-  },
-  historyItem: {
-    padding: 15,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 8,
-  },
-  historyText: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    fontStyle: 'italic',
   },
 });
 
