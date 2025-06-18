@@ -10,8 +10,10 @@ import {
   Platform,
   Alert,
   Image,
+  ScrollView,
 } from 'react-native';
 import RNPickerSelect from 'react-native-picker-select';
+import apiService from '../../services/ApiService';
 
 const LoginScreen = ({navigation}) => {
   const [selectedAction, setSelectedAction] = useState(null);
@@ -21,10 +23,15 @@ const LoginScreen = ({navigation}) => {
     unitNumber: '',
     workType: '',
   });
+  const [isLoading, setIsLoading] = useState(false);
+  const [serverStatus, setServerStatus] = useState('checking'); // checking online or offline
 
   // Timer management
   const intervalRef = useRef(null);
   const secondsRef = useRef(0);
+
+  // ScrollView ref for auto-scroll
+  const scrollViewRef = useRef(null);
 
   // Data untuk dropdown Unit Number dan Work Type
   const unitNumbers = [
@@ -42,6 +49,38 @@ const LoginScreen = ({navigation}) => {
     {label: 'Pekerjaan D', value: 'Pekerjaan D'},
     {label: 'Pekerjaan E', value: 'Pekerjaan E'},
   ];
+
+  // Test API connection on component mount
+  useEffect(() => {
+    testApiConnection();
+  }, []);
+
+  const testApiConnection = async () => {
+    try {
+      console.log('🔍 Testing API connection...');
+      setServerStatus('checking');
+
+      const health = await apiService.checkHealth();
+
+      if (health.success) {
+        console.log('✅ API Connection successful');
+        setServerStatus('online');
+
+        // Also test database
+        const dbTest = await apiService.testDatabase();
+        if (dbTest.success) {
+          console.log('✅ Database connection successful');
+          console.log('📊 Employee count:', dbTest.data.employee_count);
+        }
+      } else {
+        console.log('⚠️ API Connection failed:', health.message);
+        setServerStatus('offline');
+      }
+    } catch (error) {
+      console.log('💥 API Connection error:', error.message);
+      setServerStatus('offline');
+    }
+  };
 
   // Data untuk dropdown Unit Number dan Work Type dengan highlight
   const getUnitNumbers = useCallback(() => {
@@ -112,40 +151,76 @@ const LoginScreen = ({navigation}) => {
 
       // Set new action
       setSelectedAction(action);
-
       // Start timer
       startTimer();
+
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({animated: true});
+      }, 100);
     },
     [startTimer],
   );
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback(async () => {
+    // Validation
     if (!formData.id || !formData.unitNumber || !formData.workType) {
       Alert.alert('Error', 'Silakan isi semua field');
       return;
     }
+    if (!selectedAction) {
+      Alert.alert('Error', 'Silakan pilih action terlebih dahulu');
+      return;
+    }
+
+    setIsLoading(true);
 
     try {
-      console.log('Navigation attempt:', {selectedAction, formData, timer});
+      console.log('🚀 Starting login process...');
+      console.log('📝 Form data:', formData);
+      console.log('⚙️ Selected action:', selectedAction);
+
+      // Step 1: Validate employee
+      console.log('🔍 Step 1: Validating employee...');
+      const employeeResult = await apiService.validateEmployee(formData.id);
+
+      if (!employeeResult.success) {
+        Alert.alert('Error', employeeResult.message || 'Employee not found');
+        setIsLoading(false);
+        return;
+      }
+
+      console.log('✅ Employee validated:', employeeResult.data.NAME);
+
+      // Step 2: Create session
+      console.log('📝 Step 2: Creating session...');
+      const documentNumber = apiService.generateDocumentNumber();
+
+      // Step 3: Navigate to Dashboard with session data
+      // HM Awal will be handled in Dashboard modal
+      console.log('🚀 Step 3: Navigating to Dashboard...');
 
       navigation.navigate('Dashboard', {
+        employee: employeeResult.data,
+        sessionData: {
+          documentNumber: documentNumber,
+          operatorId: formData.id,
+          unitId: formData.unitNumber,
+          workType: formData.workType,
+          actionType: selectedAction,
+        },
         selectedAction,
         formData,
         currentTimer: timer,
       });
 
-      console.log('Navigation Success!');
+      console.log('✅ Navigation successful!');
     } catch (error) {
-      console.log('Navigation Error:', error);
-      Alert.alert('Error', `Navigation Failed: ${error.message}`);
+      console.error('💥 Login process failed:', error);
+      Alert.alert('Error', 'Login failed: ' + error.message);
+    } finally {
+      setIsLoading(false);
     }
   }, [formData, selectedAction, timer, navigation]);
-
-  //   Alert.alert(
-  //     'Success',
-  //     `${selectedAction} dimulai!\nID: ${formData.id}\nUnit: ${formData.unitNumber}\nPekerjaan: ${formData.workType}`,
-  //   );
-  // }, [formData, selectedAction]);
 
   const resetForm = useCallback(() => {
     // Clear timer
@@ -173,151 +248,212 @@ const LoginScreen = ({navigation}) => {
     setFormData(prev => ({...prev, workType: value}));
   }, []);
 
+  // Server status indicator
+  const getServerStatusColor = () => {
+    switch (serverStatus) {
+      case 'online':
+        return '#4CAF50';
+      case 'offline':
+        return '#F44336';
+      default:
+        return '#FF9800';
+    }
+  };
+
+  const getServerStatusText = () => {
+    switch (serverStatus) {
+      case 'online':
+        return '🟢 Server Online';
+      case 'offline':
+        return '🔴 Server Offline';
+      default:
+        return '🟡 Checking...';
+    }
+  };
+
+  const renderContent = () => {
+    return (
+      <>
+        {/* Server Status Indicator - Always at top */}
+        <View style={styles.serverStatusContainer}>
+          <Text
+            style={[styles.serverStatusText, {color: getServerStatusColor()}]}>
+            {getServerStatusText()}
+          </Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={testApiConnection}>
+            <Text style={styles.retryButtonText}>↻</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Logo Section */}
+        <View style={styles.logoContainer}>
+          <Image
+            source={require('../../../assets/images/fms.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
+          <Text style={styles.tagline}>Mulai Sesi Anda</Text>
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          <TouchableOpacity
+            style={[
+              styles.actionBtn,
+              styles.safetyTalkBtn,
+              selectedAction === 'SAFETY TALK' && styles.selectedBtn,
+              selectedAction === 'SAFETY TALK' && styles.pressedBtn,
+            ]}
+            onPress={() => handleActionButton('SAFETY TALK')}
+            disabled={selectedAction === 'SAFETY TALK'}
+            activeOpacity={1}>
+            <Text style={styles.actionBtnText}>SAFETY TALK</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.actionBtn,
+              styles.rainBtn,
+              selectedAction === 'RAIN' && styles.selectedBtn,
+              selectedAction === 'RAIN' && styles.pressedBtn,
+            ]}
+            onPress={() => handleActionButton('RAIN')}
+            disabled={selectedAction === 'RAIN'}
+            activeOpacity={1}>
+            <Text style={styles.actionBtnText}>RAIN</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.actionBtn,
+              styles.breakdownBtn,
+              selectedAction === 'BREAKDOWN' && styles.selectedBtn,
+              selectedAction === 'BREAKDOWN' && styles.pressedBtn,
+            ]}
+            onPress={() => handleActionButton('BREAKDOWN')}
+            disabled={selectedAction === 'BREAKDOWN'}
+            activeOpacity={1}>
+            <Text style={styles.actionBtnText}>BREAKDOWN</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Timer */}
+        {selectedAction && (
+          <View style={styles.timerContainer}>
+            <Text style={styles.timerText}>{timer}</Text>
+          </View>
+        )}
+
+        {/* Action Form */}
+        {selectedAction ? (
+          <View style={styles.actionForm}>
+            <Text style={styles.formTitle}>{selectedAction}</Text>
+
+            {/* ID Input */}
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.input}
+                placeholder="Masukkan ID / Badge Number"
+                placeholderTextColor="#999"
+                value={formData.id}
+                onChangeText={text =>
+                  setFormData(prev => ({...prev, id: text}))
+                }
+              />
+            </View>
+
+            {/* Unit Number Picker */}
+            <View style={styles.inputContainer}>
+              <RNPickerSelect
+                onValueChange={handleUnitNumberChange}
+                items={getUnitNumbers()}
+                placeholder={{
+                  label: 'Pilih Unit Number',
+                  value: null,
+                  color: '#999',
+                }}
+                value={formData.unitNumber}
+                style={pickerSelectStyles}
+                useNativeAndroidPickerStyle={false}
+                fixAndroidTouchableBug={true}
+                Icon={() => {
+                  return <Text style={styles.dropdownArrow}></Text>;
+                }}
+              />
+            </View>
+
+            {/* Work Type Picker */}
+            <View style={styles.inputContainer}>
+              <RNPickerSelect
+                onValueChange={handleWorkTypeChange}
+                items={getWorkTypes()}
+                placeholder={{
+                  label: 'Pilih Work Type',
+                  value: null,
+                  color: '#999',
+                  disabled: true,
+                }}
+                value={formData.workType}
+                style={pickerSelectStyles}
+                useNativeAndroidPickerStyle={false}
+                fixAndroidTouchableBug={true}
+                Icon={() => {
+                  return <Text style={styles.dropdownArrow}></Text>;
+                }}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.submitButton,
+                isLoading && styles.submitButtonDisabled,
+              ]}
+              onPress={handleSubmit}
+              disabled={isLoading}
+              activeOpacity={0.8}>
+              <Text style={styles.submitButtonText}>
+                {isLoading ? 'Connecting...' : 'Mulai'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.resetButton}
+              onPress={resetForm}
+              activeOpacity={0.8}>
+              <Text style={styles.resetButtonText}>Reset</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.loginForm}>
+            <Text style={styles.formTitle}>Login Operator</Text>
+            <Text style={styles.instruction}>
+              Pilih salah satu tombol di atas untuk memulai
+            </Text>
+          </View>
+        )}
+        {selectedAction && <View style={styles.bottomSpacing} />}
+      </>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}>
-        <View style={styles.content}>
-          {/* Logo Section */}
-          <View style={styles.logoContainer}>
-            <Image
-              source={require('../../../assets/images/fms.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
-            />
-            <Text style={styles.tagline}>Mulai Sesi Anda</Text>
-          </View>
-
-          {/* Action Buttons */}
-          <View style={styles.actionButtons}>
-            <TouchableOpacity
-              style={[
-                styles.actionBtn,
-                styles.safetyTalkBtn,
-                selectedAction === 'SAFETY TALK' && styles.selectedBtn,
-                selectedAction === 'SAFETY TALK' && styles.pressedBtn,
-              ]}
-              onPress={() => handleActionButton('SAFETY TALK')}
-              disabled={selectedAction === 'SAFETY TALK'}
-              activeOpacity={1}>
-              <Text style={styles.actionBtnText}>SAFETY TALK</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.actionBtn,
-                styles.rainBtn,
-                selectedAction === 'RAIN' && styles.selectedBtn,
-                selectedAction === 'RAIN' && styles.pressedBtn,
-              ]}
-              onPress={() => handleActionButton('RAIN')}
-              disabled={selectedAction === 'RAIN'}
-              activeOpacity={1}>
-              <Text style={styles.actionBtnText}>RAIN</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.actionBtn,
-                styles.breakdownBtn,
-                selectedAction === 'BREAKDOWN' && styles.selectedBtn,
-                selectedAction === 'BREAKDOWN' && styles.pressedBtn,
-              ]}
-              onPress={() => handleActionButton('BREAKDOWN')}
-              disabled={selectedAction === 'BREAKDOWN'}
-              activeOpacity={1}>
-              <Text style={styles.actionBtnText}>BREAKDOWN</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Timer */}
-          {selectedAction && (
-            <View style={styles.timerContainer}>
-              <Text style={styles.timerText}>{timer}</Text>
-            </View>
-          )}
-
-          {/* Action Form */}
-          {selectedAction ? (
-            <View style={styles.actionForm}>
-              <Text style={styles.formTitle}>{selectedAction}</Text>
-
-              {/* ID Input */}
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Masukkan ID / Badge Number"
-                  placeholderTextColor="#999"
-                  value={formData.id}
-                  onChangeText={text =>
-                    setFormData(prev => ({...prev, id: text}))
-                  }
-                />
-              </View>
-
-              {/* Unit Number Picker */}
-              <View style={styles.inputContainer}>
-                <RNPickerSelect
-                  onValueChange={handleUnitNumberChange}
-                  items={getUnitNumbers()}
-                  placeholder={{
-                    label: 'Pilih Unit Number',
-                    value: null,
-                    color: '#999',
-                  }}
-                  value={formData.unitNumber}
-                  style={pickerSelectStyles}
-                  useNativeAndroidPickerStyle={false}
-                  fixAndroidTouchableBug={true}
-                  Icon={() => {
-                    return <Text style={styles.dropdownArrow}></Text>;
-                  }}
-                />
-              </View>
-
-              {/* Work Type Picker */}
-              <View style={styles.inputContainer}>
-                <RNPickerSelect
-                  onValueChange={handleWorkTypeChange}
-                  items={getWorkTypes()}
-                  placeholder={{
-                    label: 'Pilih Work Type',
-                    value: null,
-                    color: '#999',
-                    disabled: true,
-                  }}
-                  value={formData.workType}
-                  style={pickerSelectStyles}
-                  useNativeAndroidPickerStyle={false}
-                  fixAndroidTouchableBug={true}
-                  Icon={() => {
-                    return <Text style={styles.dropdownArrow}></Text>;
-                  }}
-                />
-              </View>
-
-              <TouchableOpacity
-                style={styles.submitButton}
-                onPress={handleSubmit}
-                activeOpacity={0.8}>
-                <Text style={styles.submitButtonText}>Mulai</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.resetButton}
-                onPress={resetForm}
-                activeOpacity={0.8}>
-                <Text style={styles.resetButtonText}>Reset</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.loginForm}>
-              <Text style={styles.formTitle}>Login Operator</Text>
-              <Text style={styles.instruction}>
-                Pilih salah satu tombol di atas untuk memulai
-              </Text>
-            </View>
-          )}
-        </View>
+        {/* CONDITIONAL RENDERING: ScrollView only active when action is selected */}
+        {selectedAction ? (
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollViewContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled">
+            {renderContent()}
+          </ScrollView>
+        ) : (
+          <View style={styles.centeredContent}>{renderContent()}</View>
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -355,40 +491,6 @@ const pickerSelectStyles = StyleSheet.create({
     top: 15,
     right: 15,
   },
-  modalViewMiddle: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 0,
-    margin: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  modalViewBottom: {
-    backgroundColor: 'white',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 0,
-    paddingBottom: 20,
-  },
-  chevronContainer: {
-    display: 'none',
-  },
-  done: {
-    color: '#2196F3',
-    fontSize: 16,
-    fontWeight: 'bold',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-  },
-  doneDepressed: {
-    color: '#1976D2',
-  },
 });
 
 const styles = StyleSheet.create({
@@ -399,14 +501,47 @@ const styles = StyleSheet.create({
   keyboardView: {
     flex: 1,
   },
-  content: {
+  centeredContent: {
     flex: 1,
     padding: 20,
     justifyContent: 'center',
   },
+  scrollView: {
+    flex: 1,
+  },
+  scrollViewContent: {
+    flexGrow: 1,
+    padding: 20,
+  },
+  // Server status styles
+  serverStatusContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 15,
+    paddingTop: 10,
+  },
+  serverStatusText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  retryButton: {
+    marginLeft: 10,
+    padding: 5,
+  },
+  retryButtonText: {
+    fontSize: 16,
+    color: '#666',
+  },
+  // Logo section
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 25,
+  },
+  logoImage: {
+    width: 200,
+    height: 90,
+    marginBottom: 5,
   },
   tagline: {
     fontSize: 20,
@@ -414,15 +549,16 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginTop: 5,
   },
+  // Action buttons
   actionButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 20,
-    gap: 20,
+    gap: 15,
   },
   actionBtn: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 15,
     borderRadius: 8,
     alignItems: 'center',
     shadowColor: '#000',
@@ -430,6 +566,9 @@ const styles = StyleSheet.create({
       width: 0,
       height: 4,
     },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   safetyTalkBtn: {
     backgroundColor: '#4CAF50',
@@ -448,7 +587,7 @@ const styles = StyleSheet.create({
   selectedBtn: {
     opacity: 0.8,
     borderWidth: 2,
-    borderColor: '#000', // ganti warna border action btn yang dipilih
+    borderColor: '#000',
   },
   pressedBtn: {
     transform: [{translateY: 2}],
@@ -461,19 +600,21 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
+  // Timer
   timerContainer: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 25,
   },
   timerText: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#333',
   },
+  // Forms
   actionForm: {
     backgroundColor: 'white',
     borderRadius: 12,
-    padding: 30,
+    padding: 25,
     marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: {
@@ -484,12 +625,61 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  loginForm: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 25,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  formTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 25,
+  },
+  instruction: {
+    textAlign: 'center',
+    color: '#666',
+    fontSize: 14,
+    fontStyle: 'italic',
+  },
+  // Form inputs
+  inputContainer: {
+    marginBottom: 20,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    fontSize: 16,
+    backgroundColor: '#fafafa',
+  },
+  dropdownArrow: {
+    fontSize: 12,
+    color: '#666',
+  },
+  // Buttons
   submitButton: {
     backgroundColor: '#2196F3',
     borderRadius: 8,
     paddingVertical: 15,
     alignItems: 'center',
     marginTop: 20,
+  },
+  submitButtonDisabled: {
+    backgroundColor: '#ccc',
+    opacity: 0.6,
   },
   submitButtonText: {
     color: 'white',
@@ -509,53 +699,9 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16,
   },
-  instruction: {
-    textAlign: 'center',
-    color: '#666',
-    fontSize: 14,
-    fontStyle: 'italic',
-  },
-  loginForm: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 30,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  formTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    textAlign: 'center',
-    marginBottom: 30,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    fontSize: 16,
-    backgroundColor: '#fafafa',
-  },
-  logoImage: {
-    width: 200,
-    height: 90,
-    marginBottom: 5,
-  },
-  dropdownArrow: {
-    fontSize: 12,
-    color: '#666',
+  // Bottom spacing to ensure content is fully scrollable
+  bottomSpacing: {
+    height: 50,
   },
 });
 
