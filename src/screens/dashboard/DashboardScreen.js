@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useRef, use} from 'react';
 import {
   View,
   Text,
@@ -35,12 +35,17 @@ const DashboardScreen = ({route, navigation}) => {
   const [sessionCreated, setSessionCreated] = useState(false);
   const [isEndingShift, setIsEndingShift] = useState(false);
 
+  // Timer states
+  const [sessionTimer, setSessionTimer] = useState(currentTimer || '00:00:00');
+  const timerIntervalRef = useRef(null);
+  const timerSecondsRef = useRef(0);
+
   // Global state yang bisa diakses semua content components
   const [globalData, setGlobalData] = useState({
     // Data dari login
     selectedAction: selectedAction || 'SHIFT CHANGE',
     formData: formData || {},
-    currentTimer: currentTimer || '00:00:00',
+    currentTimer: sessionTimer,
     employee: employee || {},
     sessionData: sessionData || {},
 
@@ -99,14 +104,66 @@ const DashboardScreen = ({route, navigation}) => {
     time: '',
   });
 
-  // State untuk menampilkan modal popup Hm Awal
+  // State untuk menampilkan modal popup Hm Awal dan Hm Akhir
   const [showHmAwalModal, setShowHmAwalModal] = useState(true);
-
-  // State for End Shift Modal
   const [showEndShiftModal, setShowEndShiftModal] = useState(false);
   const [hmAkhirShift, setHmAkhirShift] = useState('');
 
-  // Timer management for global timer
+  // Timer management for session duration
+  useEffect(() => {
+    console.log('🕐 Initializing session timer...');
+
+    // Parse initial timer dari LoginScreen
+    const parseTimer = timeString => {
+      const parts = timeString.split(':');
+      if (parts.length === 3) {
+        const hours = parseInt(parts[0]) || 0;
+        const minutes = parseInt(parts[1]) || 0;
+        const seconds = parseInt(parts[2]) || 0;
+        return hours * 3600 + minutes * 60 + seconds;
+      }
+      return 0; // Default to 0 seconds if format is invalid
+    };
+
+    // Set initial timer seconds dari currentTimer yang diterima dari LoginScreen
+    timerSecondsRef.current = parseTimer(currentTimer || '00:00:00');
+
+    // Start timer interval
+    timerIntervalRef.current = setInterval(() => {
+      timerSecondsRef.current += 1; // Increment timer by 1 second
+      const formattedTime = formatSessionTime(timerSecondsRef.current);
+
+      setSessionTimer(formattedTime);
+
+      // Update global data dengan timer terbaru
+      setGlobalData(prev => ({
+        ...prev,
+        currentTimer: formattedTime,
+      }));
+    }, 1000);
+
+    console.log(`✅ Session timer started from: ${currentTimer}`);
+
+    // Cleanup function to clear interval on unmount
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        console.log('🛑 Session timer stopped');
+      }
+    };
+  }, []); // Empty dependency array to run only once on mount
+
+  // Format timer function
+  const formatSessionTime = totalSeconds => {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return `${hours.toString().padStart(2, '0')}:${minutes
+      .toString()
+      .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  // DateTime timer for real-time updates
   useEffect(() => {
     const updateDateTime = () => {
       const now = new Date();
@@ -144,6 +201,7 @@ const DashboardScreen = ({route, navigation}) => {
           'current_session_data',
           JSON.stringify({
             ...globalData,
+            sessionData: sessionTimer,
             timestamp: new Date().toISOString(),
           }),
         );
@@ -155,12 +213,13 @@ const DashboardScreen = ({route, navigation}) => {
     if (globalData.sessionId) {
       saveSessionData();
     }
-  }, [globalData]);
+  }, [globalData, sessionTimer]);
 
   const updateGlobalData = newData => {
     setGlobalData(prev => ({
       ...prev,
       ...newData,
+      currentTimer: sessionTimer,
     }));
   };
 
@@ -508,7 +567,7 @@ const DashboardScreen = ({route, navigation}) => {
           </View>
 
           <View style={styles.rightColumn}>
-            <Text style={styles.timerText}>{globalData.currentTimer}</Text>
+            <Text style={styles.timerText}>{sessionTimer}</Text>
           </View>
         </View>
 

@@ -170,7 +170,6 @@ const IdleContent = ({
     }
 
     try {
-      setIsLoading(true);
       const activityName =
         idleActivities.find(act => act.code === activityCode)?.name ||
         `IDLE_${activityCode}`;
@@ -196,15 +195,13 @@ const IdleContent = ({
     } catch (error) {
       console.error(`💥 Error saving idle activity:`, error.message);
       return false;
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  const startActivityTimer = activityCode => {
-    // Stop previous activity if any
+  const startActivityTimer = async activityCode => {
+    // Stop previous activity silently if any
     if (activeActivity && activityStartTime) {
-      stopCurrentActivity();
+      await stopCurrentActivity(false); // false = no alert, silent stop
     }
 
     if (intervalRef.current) {
@@ -229,7 +226,7 @@ const IdleContent = ({
         activeCode: activityCode,
         activeName: idleActivities.find(act => act.code === activityCode)?.name,
         startTime:
-          new Date().toLocaleTimeString('en-US', {
+          new Date().toLocaleTimeString('id-ID', {
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
@@ -245,7 +242,7 @@ const IdleContent = ({
     console.log(`🚀 Started idle activity: ${activityCode}`);
   };
 
-  const stopCurrentActivity = async () => {
+  const stopCurrentActivity = async (showAlert = true) => {
     if (!activeActivity || !activityStartTime) {
       console.warn('⚠️ No active activity to stop');
       return;
@@ -257,6 +254,11 @@ const IdleContent = ({
 
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
+    }
+
+    // Set loading state for silent operations
+    if (!showAlert) {
+      setIsLoading(true);
     }
 
     // Save to backend
@@ -273,7 +275,7 @@ const IdleContent = ({
         ...globalData.idleData,
         isActive: false,
         endTime:
-          endTime.toLocaleTimeString('en-US', {
+          endTime.toLocaleTimeString('id-ID', {
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
@@ -291,17 +293,47 @@ const IdleContent = ({
       idleActivities.find(act => act.code === currentActivityCode)?.name ||
       currentActivityCode;
 
-    if (saved) {
-      Alert.alert(
-        'Aktivitas Selesai',
-        `${activityName} telah dihentikan dan disimpan\nDurasi: ${finalDuration}`,
-      );
+    if (showAlert) {
+      // Show alert only when manually stopping
+      if (saved) {
+        Alert.alert(
+          'Aktivitas Selesai',
+          `${activityName} telah dihentikan dan disimpan\nDurasi: ${finalDuration}`,
+        );
+      } else {
+        Alert.alert(
+          'Aktivitas Selesai (Offline)',
+          `${activityName} telah dihentikan\nDurasi: ${finalDuration}\n\n⚠️ Data tersimpan lokal, akan disinkronkan saat online`,
+        );
+      }
     } else {
-      Alert.alert(
-        'Aktivitas Selesai (Offline)',
-        `${activityName} telah dihentikan\nDurasi: ${finalDuration}\n\n⚠️ Data tersimpan lokal, akan disinkronkan saat online`,
+      // Silent background save - just log
+      console.log(
+        `✅ ${activityName} completed silently (${finalDuration}) - ${
+          saved ? 'Saved' : 'Offline'
+        }`,
       );
     }
+
+    // Reset loading state
+    if (!showAlert) {
+      setIsLoading(false);
+    }
+  };
+
+  const handleActivityButton = async activityCode => {
+    if (activeActivity === activityCode) {
+      // Jika klik button yang sama, maka stop timer
+      await stopCurrentActivity(true); // true = show alert
+    } else {
+      // Switch ke aktivitas baru - langsung start tanpa alert
+      await startActivityTimer(activityCode);
+    }
+  };
+
+  // Manual function for the stop button
+  const stopCurrentActivityManual = async () => {
+    await stopCurrentActivity(true); // true = show alert
   };
 
   const resetAllTimers = () => {
@@ -313,9 +345,9 @@ const IdleContent = ({
         {
           text: 'Ya',
           onPress: async () => {
-            // Stop current activity first
+            // Stop current activity first (silently)
             if (activeActivity) {
-              await stopCurrentActivity();
+              await stopCurrentActivity(false);
             }
 
             if (intervalRef.current) {
@@ -360,16 +392,6 @@ const IdleContent = ({
   for (let i = 0; i < idleActivities.length; i += 3) {
     groupedActivities.push(idleActivities.slice(i, i + 3));
   }
-
-  const handleActivityButton = activityCode => {
-    if (activeActivity === activityCode) {
-      // Jika klik button yang sama, maka stop timer
-      stopCurrentActivity();
-    } else {
-      // Switch ke aktivitas baru - langsung tanpa konfirmasi
-      startActivityTimer(activityCode);
-    }
-  };
 
   const getConnectionStatus = () => {
     if (!globalData.documentNumber) {
@@ -419,7 +441,7 @@ const IdleContent = ({
       {isLoading && (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="small" color="#2196F3" />
-          <Text style={styles.loadingText}>Saving activity...</Text>
+          <Text style={styles.loadingText}>Switching activity...</Text>
         </View>
       )}
 
@@ -443,6 +465,9 @@ const IdleContent = ({
       {/* Activity Buttons - LAYOUT 3 KOLOM */}
       <View style={styles.activitiesContainer}>
         <Text style={styles.sectionTitle}>Pilih Aktivitas Idle:</Text>
+        <Text style={styles.instructionText}>
+          Tap sekali untuk mulai, tap lagi untuk berhenti.
+        </Text>
 
         {groupedActivities.map((row, rowIndex) => (
           <View key={rowIndex} style={styles.activitiesRow}>
@@ -500,7 +525,7 @@ const IdleContent = ({
       {/* Category Summary */}
       {getCategoryStats().length > 0 && (
         <View style={styles.summaryContainer}>
-          <Text style={styles.summaryTitle}>Ringkasan per Kategori:</Text>
+          <Text style={styles.summaryTitle}>Riwayat per Kategori:</Text>
           {getCategoryStats().map(stat => (
             <View key={stat.category} style={styles.summaryRow}>
               <Text style={styles.summaryCategory}>{stat.category}</Text>
@@ -516,7 +541,7 @@ const IdleContent = ({
         {activeActivity && (
           <TouchableOpacity
             style={[styles.stopButton, isLoading && styles.disabledButton]}
-            onPress={stopCurrentActivity}
+            onPress={stopCurrentActivityManual}
             disabled={isLoading}>
             <Text style={styles.controlButtonText}>
               {isLoading ? 'Saving...' : 'Stop Current Activity'}
@@ -584,7 +609,14 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
+    marginBottom: 5,
+  },
+  instructionText: {
+    fontSize: 12,
+    color: '#666',
+    fontStyle: 'italic',
     marginBottom: 15,
+    textAlign: 'center',
   },
   activitiesRow: {
     flexDirection: 'row',

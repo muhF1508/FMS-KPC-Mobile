@@ -84,7 +84,6 @@ const DelayContent = ({
     }
 
     try {
-      setIsLoading(true);
       const activityName =
         delayActivities.find(act => act.code === activityCode)?.name ||
         `DELAY_${activityCode}`;
@@ -110,15 +109,13 @@ const DelayContent = ({
     } catch (error) {
       console.error(`💥 Error saving delay activity:`, error.message);
       return false;
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  const startActivityTimer = activityCode => {
-    // Stop previous activity if any
+  const startActivityTimer = async activityCode => {
+    // Stop previous activity if any (without alert)
     if (activeActivity && activityStartTime) {
-      stopCurrentActivity();
+      await stopCurrentActivity(false); // false = no alert
     }
 
     // Clear if exists interval
@@ -160,17 +157,18 @@ const DelayContent = ({
     console.log(`🚀 Started delay activity: ${activityCode}`);
   };
 
-  const handleActivityButton = activityCode => {
+  const handleActivityButton = async activityCode => {
     if (activeActivity === activityCode) {
-      // jika klik button yang sama, stop timer
-      stopCurrentActivity();
+      // jika klik button yang sama, stop timer with alert
+      await stopCurrentActivity(true); // true = show alert
     } else {
-      // Switch ke aktivitas baru - langsung start tanpa popup
-      startActivityTimer(activityCode);
+      // Switch ke aktivitas baru - langsung start tanpa alert
+      await startActivityTimer(activityCode);
     }
   };
 
-  const stopCurrentActivity = async () => {
+  // Function to stop the current activity and save it
+  const stopCurrentActivity = async (showAlert = true) => {
     if (!activeActivity || !activityStartTime) {
       console.warn('⚠️ No active activity to stop');
       return;
@@ -183,6 +181,11 @@ const DelayContent = ({
     // Stop timer
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
+    }
+
+    // Set loading state for silent operations
+    if (!showAlert) {
+      setIsLoading(true);
     }
 
     // Save to backend
@@ -199,7 +202,7 @@ const DelayContent = ({
         ...globalData.delayData,
         isActive: false,
         endTime:
-          endTime.toLocaleTimeString('en-US', {
+          endTime.toLocaleTimeString('id-ID', {
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
@@ -217,17 +220,36 @@ const DelayContent = ({
       delayActivities.find(act => act.code === currentActivityCode)?.name ||
       currentActivityCode;
 
-    if (saved) {
-      Alert.alert(
-        'Aktivitas Selesai',
-        `${activityName} telah dihentikan dan disimpan\nDurasi: ${duration}`,
-      );
+    if (showAlert) {
+      // Show alert only when manually stopping
+      if (saved) {
+        Alert.alert(
+          'Aktivitas Selesai',
+          `${activityName} telah dihentikan dan disimpan\nDurasi: ${duration}`,
+        );
+      } else {
+        Alert.alert(
+          'Aktivitas Selesai (Offline)',
+          `${activityName} telah dihentikan\nDurasi: ${duration}\n\n⚠️ Data tersimpan lokal, akan disinkronkan saat online`,
+        );
+      }
     } else {
-      Alert.alert(
-        'Aktivitas Selesai (Offline)',
-        `${activityName} telah dihentikan\nDurasi: ${duration}\n\n⚠️ Data tersimpan lokal, akan disinkronkan saat online`,
+      // Silent background save - just log
+      console.log(
+        `✅ ${activityName} completed silently (${duration}) - ${
+          saved ? 'Saved' : 'Offline'
+        }`,
       );
     }
+
+    // Reset loading state
+    if (!showAlert) {
+      setIsLoading(false);
+    }
+  };
+
+  const stopCurrentActivityManual = async () => {
+    await stopCurrentActivity(true);
   };
 
   const resetAllTimers = () => {
@@ -241,7 +263,7 @@ const DelayContent = ({
           onPress: async () => {
             // Stop current activity first
             if (activeActivity) {
-              await stopCurrentActivity();
+              await stopCurrentActivity(false);
             }
 
             if (intervalRef.current) {
@@ -332,6 +354,9 @@ const DelayContent = ({
       {/* Activity Buttons - HORIZONTAL LAYOUT */}
       <View style={styles.activitiesContainer}>
         <Text style={styles.sectionTitle}>Pilih Aktivitas Delay:</Text>
+        <Text style={styles.instructionText}>
+          Tap sekali untuk mulai, tap lagi untuk berhenti
+        </Text>
 
         {/* Row 1: First 3 activities */}
         <View style={styles.activitiesRow}>
@@ -436,7 +461,7 @@ const DelayContent = ({
       {/* Activity Summary */}
       {Object.values(timers).some(time => time !== '00:00:00') && (
         <View style={styles.summaryContainer}>
-          <Text style={styles.summaryTitle}>Ringkasan Delay Hari Ini:</Text>
+          <Text style={styles.summaryTitle}>Riwayat Delay Hari Ini:</Text>
           {delayActivities.map(activity => {
             const time = timers[activity.code];
             if (time !== '00:00:00') {
@@ -458,7 +483,7 @@ const DelayContent = ({
         {activeActivity && (
           <TouchableOpacity
             style={[styles.stopButton, isLoading && styles.disabledButton]}
-            onPress={stopCurrentActivity}
+            onPress={stopCurrentActivityManual}
             disabled={isLoading}>
             <Text style={styles.controlButtonText}>
               {isLoading ? 'Saving...' : 'Stop Current Activity'}
@@ -526,7 +551,14 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
+    marginBottom: 5,
+  },
+  instructionText: {
+    fontSize: 12,
+    color: '#666',
+    fontStyle: 'italic',
     marginBottom: 15,
+    textAlign: 'center',
   },
   activitiesRow: {
     flexDirection: 'row',
