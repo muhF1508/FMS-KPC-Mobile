@@ -6,18 +6,29 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 
-const WorkContent = ({globalData, updateGlobalData, setActiveTab}) => {
+const WorkContent = ({
+  globalData,
+  updateGlobalData,
+  setActiveTab,
+  apiService,
+}) => {
   const [activeStep, setActiveStep] = useState(null);
   const [currentTruckNumber, setCurrentTruckNumber] = useState(1);
-  const [loadCount, setLoadCount] = useState(0); // Counter garukan (max 4)
+  const [loadCount, setLoadCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Timer state untuk setiap step
   const [stepTimers, setStepTimers] = useState({
     spot: '00:00:00',
     load: '00:00:00',
   });
+
+  // Activity tracking
+  const [currentActivity, setCurrentActivity] = useState(null);
+  const [activityStartTime, setActivityStartTime] = useState(null);
 
   // Refs untuk interval dan seconds counter
   const intervalRef = useRef(null);
@@ -26,7 +37,7 @@ const WorkContent = ({globalData, updateGlobalData, setActiveTab}) => {
     load: 0,
   });
 
-  // Data workflow steps - HANYA 2 BUTTON sekarang
+  // Data workflow steps
   const workflowSteps = [
     {
       step: 'spot',
@@ -67,6 +78,8 @@ const WorkContent = ({globalData, updateGlobalData, setActiveTab}) => {
     }
 
     setActiveStep(stepName);
+    setActivityStartTime(new Date());
+    setCurrentActivity(stepName.toUpperCase());
 
     intervalRef.current = setInterval(() => {
       secondsRef.current[stepName] += 1;
@@ -77,11 +90,64 @@ const WorkContent = ({globalData, updateGlobalData, setActiveTab}) => {
         [stepName]: formattedTime,
       }));
     }, 1000);
+
+    console.log(`🚀 Started ${stepName.toUpperCase()} activity`);
+  };
+
+  const saveActivityToBackend = async (activityName, startTime, endTime) => {
+    if (!globalData.documentNumber) {
+      console.warn('⚠️ No document number available, skipping backend save');
+      return false;
+    }
+
+    try {
+      setIsLoading(true);
+      console.log(`💾 Saving ${activityName} activity to backend...`);
+
+      const activityData = {
+        activityName: activityName,
+        startTime: startTime,
+        endTime: endTime,
+        sessionNumber: globalData.documentNumber,
+      };
+
+      const response = await apiService.saveActivity(activityData);
+
+      if (response.success) {
+        console.log(`✅ ${activityName} activity saved successfully`);
+        return true;
+      } else {
+        console.error(
+          `❌ Failed to save ${activityName} activity:`,
+          response.message,
+        );
+        return false;
+      }
+    } catch (error) {
+      console.error(`💥 Error saving ${activityName} activity:`, error.message);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const stopCurrentActivity = async () => {
+    if (!currentActivity || !activityStartTime) return;
+
+    const endTime = new Date();
+    const activity = currentActivity;
+    const startTime = activityStartTime;
+
+    // Save to backend
+    await saveActivityToBackend(activity, startTime, endTime);
+
+    // Reset activity tracking
+    setCurrentActivity(null);
+    setActivityStartTime(null);
   };
 
   const handleStepButton = stepName => {
     if (stepName === 'spot') {
-      // Reset everything untuk truck baru
       if (loadCount > 0) {
         Alert.alert(
           'Truck Baru',
@@ -95,7 +161,6 @@ const WorkContent = ({globalData, updateGlobalData, setActiveTab}) => {
       }
       startNewTruck();
     } else if (stepName === 'load') {
-      // Harus SPOT dulu
       if (activeStep !== 'spot' && loadCount === 0) {
         Alert.alert(
           'Error',
@@ -108,7 +173,12 @@ const WorkContent = ({globalData, updateGlobalData, setActiveTab}) => {
     }
   };
 
-  const startNewTruck = () => {
+  const startNewTruck = async () => {
+    // Stop previous activity if any
+    if (currentActivity) {
+      await stopCurrentActivity();
+    }
+
     // Reset counters
     setLoadCount(0);
     Object.keys(secondsRef.current).forEach(step => {
@@ -123,9 +193,12 @@ const WorkContent = ({globalData, updateGlobalData, setActiveTab}) => {
     startStepTimer('spot');
   };
 
-  const handleLoadClick = () => {
+  const handleLoadClick = async () => {
     if (loadCount === 0) {
-      // Pertama kali LOAD, start timer
+      // Stop SPOT activity and start LOAD activity
+      if (currentActivity === 'SPOT') {
+        await stopCurrentActivity();
+      }
       startStepTimer('load');
     }
 
@@ -138,45 +211,75 @@ const WorkContent = ({globalData, updateGlobalData, setActiveTab}) => {
       // Truck FULL! Auto complete
       setTimeout(() => {
         completeTruckLoading(currentBcm);
-      }, 500); // Delay sedikit untuk user experience
+      }, 500);
     }
-    // Tidak ada alert/popup untuk garukan 1-3, langsung continue
   };
 
-  const completeTruckLoading = totalBcm => {
+  const completeTruckLoading = async totalBcm => {
+    // Stop current LOAD activity
+    if (currentActivity === 'LOAD') {
+      await stopCurrentActivity();
+    }
+
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
 
-    // Update global loads (per truck, bukan per garukan)
+    // Update global loads
     const newTruckLoads = globalData.workData.loads + 1;
-    const totalBcmAllTrucks = newTruckLoads * 16; // 1 truck = 16 BCM (4 garukan x 4 BCM)
+    const totalBcmAllTrucks = newTruckLoads * 16; // 1 truck = 16 BCM
     const newProductivity = `${totalBcmAllTrucks} bcm/h`;
+
+    // Calculate total working hours (simplified)
+    const totalWorkingSeconds =
+      secondsRef.current.spot + secondsRef.current.load;
+    const workingHours = (totalWorkingSeconds / 3600).toFixed(2);
+
+    const lastCycleData = {
+      truckNumber: currentTruckNumber,
+      spotTime: stepTimers.spot,
+      loadTime: stepTimers.load,
+      totalGarukan: 4,
+      totalBcm: totalBcm,
+      completedAt:
+        new Date().toLocaleTimeString('en-US', {
+          timeZone: 'Asia/Makassar',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+        }) + ' WITA',
+    };
 
     updateGlobalData({
       workData: {
         ...globalData.workData,
-        loads: newTruckLoads, // Counter per truck
+        loads: newTruckLoads,
         productivity: newProductivity,
-        lastCycle: {
-          truckNumber: currentTruckNumber,
-          spotTime: stepTimers.spot,
-          loadTime: stepTimers.load,
-          totalGarukan: 4,
-          totalBcm: totalBcm,
-          completedAt:
-            new Date().toLocaleTimeString('en-US', {
-              timeZone: 'Asia/Makassar',
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-              hour12: true,
-            }) + ' WITA',
-        },
+        hours: workingHours,
+        lastCycle: lastCycleData,
       },
-      // Flag untuk auto-start delay 006 setelah masuk delay tab
       autoStartDelay006: true,
     });
+
+    // Save truck completion to backend
+    try {
+      if (globalData.documentNumber) {
+        const truckCompletionData = {
+          activityName: `TRUCK_COMPLETED_${currentTruckNumber}`,
+          startTime: activityStartTime || new Date(),
+          endTime: new Date(),
+          sessionNumber: globalData.documentNumber,
+        };
+
+        await apiService.saveActivity(truckCompletionData);
+        console.log(
+          `✅ Truck #${currentTruckNumber} completion saved to backend`,
+        );
+      }
+    } catch (error) {
+      console.error('Error saving truck completion:', error);
+    }
 
     Alert.alert(
       'Truck Full! 🚛',
@@ -185,12 +288,9 @@ const WorkContent = ({globalData, updateGlobalData, setActiveTab}) => {
         {
           text: 'Wait for Next Truck',
           onPress: () => {
-            // Reset untuk truck selanjutnya
             setCurrentTruckNumber(prev => prev + 1);
             setLoadCount(0);
             setActiveStep(null);
-
-            // Switch ke DELAY tab (delay 006 akan auto-start di DelayContent)
             setActiveTab('delay');
           },
         },
@@ -206,7 +306,12 @@ const WorkContent = ({globalData, updateGlobalData, setActiveTab}) => {
         {text: 'Batal', style: 'cancel'},
         {
           text: 'Ya, Reset',
-          onPress: () => {
+          onPress: async () => {
+            // Stop current activity
+            if (currentActivity) {
+              await stopCurrentActivity();
+            }
+
             if (intervalRef.current) {
               clearInterval(intervalRef.current);
             }
@@ -240,7 +345,6 @@ const WorkContent = ({globalData, updateGlobalData, setActiveTab}) => {
     );
   };
 
-  // Progress bar untuk visual garukan
   const renderProgressBar = () => {
     const progress = (loadCount / 4) * 100;
     return (
@@ -256,9 +360,33 @@ const WorkContent = ({globalData, updateGlobalData, setActiveTab}) => {
     );
   };
 
+  const getConnectionStatus = () => {
+    if (!globalData.documentNumber) {
+      return (
+        <View style={styles.offlineIndicator}>
+          <Text style={styles.offlineText}>
+            📡 Offline Mode - Data tersimpan lokal
+          </Text>
+        </View>
+      );
+    }
+    return null;
+  };
+
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <Text style={styles.title}>Work Management</Text>
+
+      {/* Connection Status */}
+      {getConnectionStatus()}
+
+      {/* Loading Indicator */}
+      {isLoading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="small" color="#2196F3" />
+          <Text style={styles.loadingText}>Saving activity...</Text>
+        </View>
+      )}
 
       {/* Current Status */}
       <View style={styles.statusContainer}>
@@ -273,13 +401,17 @@ const WorkContent = ({globalData, updateGlobalData, setActiveTab}) => {
               Step Duration: {stepTimers[activeStep]}
             </Text>
           )}
+          {currentActivity && (
+            <Text style={styles.activityText}>
+              🟢 Active: {currentActivity}
+            </Text>
+          )}
         </View>
 
-        {/* Progress Bar */}
         {loadCount > 0 && renderProgressBar()}
       </View>
 
-      {/* Workflow Steps Buttons - HANYA 2 BUTTON */}
+      {/* Workflow Steps Buttons */}
       <View style={styles.stepsContainer}>
         <Text style={styles.sectionTitle}>Workflow Steps:</Text>
 
@@ -291,10 +423,11 @@ const WorkContent = ({globalData, updateGlobalData, setActiveTab}) => {
                   styles.stepButton,
                   {backgroundColor: step.color},
                   activeStep === step.step && styles.activeStepButton,
+                  isLoading && styles.disabledButton,
                 ]}
                 onPress={() => handleStepButton(step.step)}
+                disabled={isLoading}
                 activeOpacity={0.8}>
-                {/* Left Side: Icon + Name */}
                 <View style={styles.leftContent}>
                   <Text style={styles.stepIcon}>{step.icon}</Text>
                   <View style={styles.textContent}>
@@ -303,7 +436,6 @@ const WorkContent = ({globalData, updateGlobalData, setActiveTab}) => {
                   </View>
                 </View>
 
-                {/* Right Side: Timer + Status */}
                 <View style={styles.rightContent}>
                   <Text
                     style={[
@@ -339,12 +471,33 @@ const WorkContent = ({globalData, updateGlobalData, setActiveTab}) => {
             </Text>
             <Text style={styles.statLabel}>Productivity</Text>
           </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statNumber}>{globalData.workData.hours}</Text>
+            <Text style={styles.statLabel}>Working Hours</Text>
+          </View>
         </View>
+
+        {/* Last Cycle Info */}
+        {globalData.workData.lastCycle && (
+          <View style={styles.lastCycleContainer}>
+            <Text style={styles.lastCycleTitle}>Last Completed Truck:</Text>
+            <Text style={styles.lastCycleText}>
+              Truck #{globalData.workData.lastCycle.truckNumber} -{' '}
+              {globalData.workData.lastCycle.totalBcm} BCM
+            </Text>
+            <Text style={styles.lastCycleTime}>
+              Completed: {globalData.workData.lastCycle.completedAt}
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Controls */}
       <View style={styles.controlsContainer}>
-        <TouchableOpacity style={styles.resetButton} onPress={resetAllData}>
+        <TouchableOpacity
+          style={[styles.resetButton, isLoading && styles.disabledButton]}
+          onPress={resetAllData}
+          disabled={isLoading}>
           <Text style={styles.resetButtonText}>🔄 Reset All Data</Text>
         </TouchableOpacity>
       </View>
@@ -364,6 +517,35 @@ const styles = StyleSheet.create({
     color: '#333',
     textAlign: 'center',
     marginBottom: 20,
+  },
+  offlineIndicator: {
+    backgroundColor: '#FFF3CD',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+  },
+  offlineText: {
+    fontSize: 12,
+    color: '#856404',
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#E3F2FD',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 15,
+  },
+  loadingText: {
+    marginLeft: 10,
+    fontSize: 14,
+    color: '#1976D2',
+    fontWeight: 'bold',
   },
   statusContainer: {
     backgroundColor: '#E8F5E8',
@@ -387,6 +569,12 @@ const styles = StyleSheet.create({
   statusTime: {
     fontSize: 14,
     color: '#666',
+    marginTop: 5,
+  },
+  activityText: {
+    fontSize: 14,
+    color: '#4CAF50',
+    fontWeight: 'bold',
     marginTop: 5,
   },
   progressContainer: {
@@ -450,6 +638,9 @@ const styles = StyleSheet.create({
   activeStepButton: {
     borderWidth: 3,
     borderColor: '#FFD700',
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   leftContent: {
     flex: 1,
@@ -528,15 +719,36 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statNumber: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#4CAF50',
     marginBottom: 5,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#666',
     textAlign: 'center',
+  },
+  lastCycleContainer: {
+    marginTop: 15,
+    padding: 10,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+  },
+  lastCycleTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 5,
+  },
+  lastCycleText: {
+    fontSize: 13,
+    color: '#666',
+  },
+  lastCycleTime: {
+    fontSize: 12,
+    color: '#999',
+    fontStyle: 'italic',
   },
   controlsContainer: {
     marginBottom: 20,

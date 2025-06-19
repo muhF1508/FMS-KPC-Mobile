@@ -6,10 +6,18 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 
-const IdleContent = ({globalData, updateGlobalData, setActiveTab}) => {
+const IdleContent = ({
+  globalData,
+  updateGlobalData,
+  setActiveTab,
+  apiService,
+}) => {
   const [activeActivity, setActiveActivity] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [activityStartTime, setActivityStartTime] = useState(null);
 
   // Timer state untuk aktivitas
   const [timers, setTimers] = useState({
@@ -57,40 +65,85 @@ const IdleContent = ({globalData, updateGlobalData, setActiveTab}) => {
     142: 0,
   });
 
-  // Data aktivitas idle dengan kategori warna - LAYOUT 3 KOLOM LEBIH BAIK
+  // Data aktivitas idle dengan kategori warna - LAYOUT 3 KOLOM
   const idleActivities = [
     // Weather Related - Blue
-    {code: '105', name: 'RAIN', color: '#2196F3'},
-    {code: '106', name: 'WET ROADS', color: '#2196F3'},
-    {code: '107', name: 'FOG', color: '#2196F3'},
+    {code: '105', name: 'RAIN', color: '#2196F3', category: 'Weather'},
+    {code: '106', name: 'WET ROADS', color: '#2196F3', category: 'Weather'},
+    {code: '107', name: 'FOG', color: '#2196F3', category: 'Weather'},
 
     // Personal Needs - Green
-    {code: '103', name: 'PRAYERS', color: '#4CAF50'},
-    {code: '109', name: 'MEAL', color: '#4CAF50'},
-    {code: '113', name: 'TOILET', color: '#4CAF50'},
+    {code: '103', name: 'PRAYERS', color: '#4CAF50', category: 'Personal'},
+    {code: '109', name: 'MEAL', color: '#4CAF50', category: 'Personal'},
+    {code: '113', name: 'TOILET', color: '#4CAF50', category: 'Personal'},
 
     // Work Related - Orange
-    {code: '100', name: 'WORKING WITHOUT TRUCK', color: '#FF9800'},
-    {code: '101', name: 'NOT REQUIRED / STANDBY', color: '#FF9800'},
-    {code: '108', name: 'WALK & WASH SHOVEL', color: '#FF9800'},
+    {
+      code: '100',
+      name: 'WORKING WITHOUT TRUCK',
+      color: '#FF9800',
+      category: 'Work',
+    },
+    {
+      code: '101',
+      name: 'NOT REQUIRED / STANDBY',
+      color: '#FF9800',
+      category: 'Work',
+    },
+    {
+      code: '108',
+      name: 'WALK & WASH SHOVEL',
+      color: '#FF9800',
+      category: 'Work',
+    },
 
     // System/Equipment - Red
-    {code: '111', name: 'WAITING FOR FLOAT', color: '#F44336'},
-    {code: '114', name: 'OUT OF FUEL', color: '#F44336'},
-    {code: '115', name: 'WAIT FOR BLASTING', color: '#F44336'},
+    {
+      code: '111',
+      name: 'WAITING FOR FLOAT',
+      color: '#F44336',
+      category: 'System',
+    },
+    {code: '114', name: 'OUT OF FUEL', color: '#F44336', category: 'System'},
+    {
+      code: '115',
+      name: 'WAIT FOR BLASTING',
+      color: '#F44336',
+      category: 'System',
+    },
 
     // System Issues - Deep Red
-    {code: '102', name: 'NO OPERATOR', color: '#D32F2F'},
-    {code: '116', name: 'DISPATCH PROBLEM', color: '#D32F2F'},
-    {code: '142', name: 'NO ROSTERED PLAN', color: '#D32F2F'},
+    {code: '102', name: 'NO OPERATOR', color: '#D32F2F', category: 'Issues'},
+    {
+      code: '116',
+      name: 'DISPATCH PROBLEM',
+      color: '#D32F2F',
+      category: 'Issues',
+    },
+    {
+      code: '142',
+      name: 'NO ROSTERED PLAN',
+      color: '#D32F2F',
+      category: 'Issues',
+    },
 
     // Training/Safety - Purple
-    {code: '015', name: 'TRAINING', color: '#9C27B0'},
-    {code: '104', name: 'SAFETY TALK', color: '#9C27B0'},
-    {code: '141', name: 'HOLIDAY SHUT DOWN', color: '#9C27B0'},
+    {code: '015', name: 'TRAINING', color: '#9C27B0', category: 'Training'},
+    {code: '104', name: 'SAFETY TALK', color: '#9C27B0', category: 'Training'},
+    {
+      code: '141',
+      name: 'HOLIDAY SHUT DOWN',
+      color: '#9C27B0',
+      category: 'Training',
+    },
 
     // Operations - Teal
-    {code: '110', name: 'SHIFT CHANGE', color: '#009688'},
+    {
+      code: '110',
+      name: 'SHIFT CHANGE',
+      color: '#009688',
+      category: 'Operations',
+    },
   ];
 
   useEffect(() => {
@@ -110,12 +163,56 @@ const IdleContent = ({globalData, updateGlobalData, setActiveTab}) => {
       .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  const saveActivityToBackend = async (activityCode, startTime, endTime) => {
+    if (!globalData.documentNumber) {
+      console.warn('⚠️ No document number available, skipping backend save');
+      return false;
+    }
+
+    try {
+      setIsLoading(true);
+      const activityName =
+        idleActivities.find(act => act.code === activityCode)?.name ||
+        `IDLE_${activityCode}`;
+
+      console.log(`💾 Saving idle activity ${activityName} to backend...`);
+
+      const activityData = {
+        activityName: activityName,
+        startTime: startTime,
+        endTime: endTime,
+        sessionNumber: globalData.documentNumber,
+      };
+
+      const response = await apiService.saveActivity(activityData);
+
+      if (response.success) {
+        console.log(`✅ Idle activity ${activityName} saved successfully`);
+        return true;
+      } else {
+        console.error(`❌ Failed to save idle activity:`, response.message);
+        return false;
+      }
+    } catch (error) {
+      console.error(`💥 Error saving idle activity:`, error.message);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const startActivityTimer = activityCode => {
+    // Stop previous activity if any
+    if (activeActivity && activityStartTime) {
+      stopCurrentActivity();
+    }
+
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
 
     setActiveActivity(activityCode);
+    setActivityStartTime(new Date());
 
     intervalRef.current = setInterval(() => {
       secondsRef.current[activityCode] += 1;
@@ -144,21 +241,39 @@ const IdleContent = ({globalData, updateGlobalData, setActiveTab}) => {
         duration: '00:00:00',
       },
     });
+
+    console.log(`🚀 Started idle activity: ${activityCode}`);
   };
 
-  const stopCurrentActivity = () => {
+  const stopCurrentActivity = async () => {
+    if (!activeActivity || !activityStartTime) {
+      console.warn('⚠️ No active activity to stop');
+      return;
+    }
+
+    const currentActivityCode = activeActivity;
+    const startTime = activityStartTime;
+    const endTime = new Date();
+
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
 
-    const finalDuration = timers[activeActivity];
+    // Save to backend
+    const saved = await saveActivityToBackend(
+      currentActivityCode,
+      startTime,
+      endTime,
+    );
+
+    const finalDuration = timers[currentActivityCode];
 
     updateGlobalData({
       idleData: {
         ...globalData.idleData,
         isActive: false,
         endTime:
-          new Date().toLocaleTimeString('en-US', {
+          endTime.toLocaleTimeString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
@@ -168,11 +283,25 @@ const IdleContent = ({globalData, updateGlobalData, setActiveTab}) => {
       },
     });
 
+    // Reset activity tracking
     setActiveActivity(null);
-    Alert.alert(
-      'Info',
-      `Aktivitas idle telah dihentikan\nDurasi: ${finalDuration}`,
-    );
+    setActivityStartTime(null);
+
+    const activityName =
+      idleActivities.find(act => act.code === currentActivityCode)?.name ||
+      currentActivityCode;
+
+    if (saved) {
+      Alert.alert(
+        'Aktivitas Selesai',
+        `${activityName} telah dihentikan dan disimpan\nDurasi: ${finalDuration}`,
+      );
+    } else {
+      Alert.alert(
+        'Aktivitas Selesai (Offline)',
+        `${activityName} telah dihentikan\nDurasi: ${finalDuration}\n\n⚠️ Data tersimpan lokal, akan disinkronkan saat online`,
+      );
+    }
   };
 
   const resetAllTimers = () => {
@@ -183,7 +312,12 @@ const IdleContent = ({globalData, updateGlobalData, setActiveTab}) => {
         {text: 'Batal', style: 'cancel'},
         {
           text: 'Ya',
-          onPress: () => {
+          onPress: async () => {
+            // Stop current activity first
+            if (activeActivity) {
+              await stopCurrentActivity();
+            }
+
             if (intervalRef.current) {
               clearInterval(intervalRef.current);
             }
@@ -199,6 +333,7 @@ const IdleContent = ({globalData, updateGlobalData, setActiveTab}) => {
             setTimers(resetTimers);
 
             setActiveActivity(null);
+            setActivityStartTime(null);
 
             updateGlobalData({
               idleData: {
@@ -236,11 +371,59 @@ const IdleContent = ({globalData, updateGlobalData, setActiveTab}) => {
     }
   };
 
+  const getConnectionStatus = () => {
+    if (!globalData.documentNumber) {
+      return (
+        <View style={styles.offlineIndicator}>
+          <Text style={styles.offlineText}>
+            📡 Offline Mode - Data tersimpan lokal
+          </Text>
+        </View>
+      );
+    }
+    return null;
+  };
+
+  const getCategoryStats = () => {
+    const categories = {};
+    idleActivities.forEach(activity => {
+      const time = timers[activity.code];
+      if (time !== '00:00:00') {
+        if (!categories[activity.category]) {
+          categories[activity.category] = {count: 0, totalSeconds: 0};
+        }
+        categories[activity.category].count++;
+
+        // Convert time to seconds
+        const [hours, minutes, seconds] = time.split(':').map(Number);
+        const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+        categories[activity.category].totalSeconds += totalSeconds;
+      }
+    });
+
+    return Object.entries(categories).map(([category, stats]) => ({
+      category,
+      count: stats.count,
+      duration: formatTime(stats.totalSeconds),
+    }));
+  };
+
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <Text style={styles.title}>Idle Activities</Text>
 
-      {/* Status Display - SAMA DENGAN DELAY CONTENT */}
+      {/* Connection Status */}
+      {getConnectionStatus()}
+
+      {/* Loading Indicator */}
+      {isLoading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="small" color="#2196F3" />
+          <Text style={styles.loadingText}>Saving activity...</Text>
+        </View>
+      )}
+
+      {/* Status Display */}
       {activeActivity && (
         <View style={styles.statusContainer}>
           <Text style={styles.statusTitle}>Status Aktivitas:</Text>
@@ -250,6 +433,9 @@ const IdleContent = ({globalData, updateGlobalData, setActiveTab}) => {
           </Text>
           <Text style={styles.statusTime}>
             Dimulai: {globalData.idleData?.startTime || 'N/A'}
+          </Text>
+          <Text style={styles.statusTime}>
+            Durasi: {timers[activeActivity]}
           </Text>
         </View>
       )}
@@ -268,10 +454,11 @@ const IdleContent = ({globalData, updateGlobalData, setActiveTab}) => {
                     {backgroundColor: activity.color},
                     activeActivity === activity.code &&
                       styles.activeActivityButton,
+                    isLoading && styles.disabledButton,
                   ]}
                   onPress={() => handleActivityButton(activity.code)}
+                  disabled={isLoading}
                   activeOpacity={0.8}>
-                  {/* Left Side: Activity Name + Timer */}
                   <View style={styles.leftContent}>
                     <Text style={styles.activityName} numberOfLines={2}>
                       {activity.name}
@@ -286,7 +473,6 @@ const IdleContent = ({globalData, updateGlobalData, setActiveTab}) => {
                     </Text>
                   </View>
 
-                  {/* Right Side: Activity Code + Running Status */}
                   <View style={styles.rightContent}>
                     <Text style={styles.activityCode}>{activity.code}</Text>
                     {activeActivity === activity.code && (
@@ -311,17 +497,37 @@ const IdleContent = ({globalData, updateGlobalData, setActiveTab}) => {
         ))}
       </View>
 
+      {/* Category Summary */}
+      {getCategoryStats().length > 0 && (
+        <View style={styles.summaryContainer}>
+          <Text style={styles.summaryTitle}>Ringkasan per Kategori:</Text>
+          {getCategoryStats().map(stat => (
+            <View key={stat.category} style={styles.summaryRow}>
+              <Text style={styles.summaryCategory}>{stat.category}</Text>
+              <Text style={styles.summaryCount}>{stat.count} activities</Text>
+              <Text style={styles.summaryTime}>{stat.duration}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
       {/* Control Buttons */}
       <View style={styles.controlsContainer}>
         {activeActivity && (
           <TouchableOpacity
-            style={styles.stopButton}
-            onPress={stopCurrentActivity}>
-            <Text style={styles.controlButtonText}>Stop Current Activity</Text>
+            style={[styles.stopButton, isLoading && styles.disabledButton]}
+            onPress={stopCurrentActivity}
+            disabled={isLoading}>
+            <Text style={styles.controlButtonText}>
+              {isLoading ? 'Saving...' : 'Stop Current Activity'}
+            </Text>
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity style={styles.resetButton} onPress={resetAllTimers}>
+        <TouchableOpacity
+          style={[styles.resetButton, isLoading && styles.disabledButton]}
+          onPress={resetAllTimers}
+          disabled={isLoading}>
           <Text style={styles.resetButtonText}>Reset All Timers</Text>
         </TouchableOpacity>
       </View>
@@ -342,6 +548,35 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
   },
+  offlineIndicator: {
+    backgroundColor: '#FFF3CD',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+  },
+  offlineText: {
+    fontSize: 12,
+    color: '#856404',
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#E3F2FD',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 15,
+  },
+  loadingText: {
+    marginLeft: 10,
+    fontSize: 14,
+    color: '#1976D2',
+    fontWeight: 'bold',
+  },
   activitiesContainer: {
     marginBottom: 20,
   },
@@ -351,7 +586,6 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 15,
   },
-  // 3 KOLOM LAYOUT dengan button horizontal
   activitiesRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -378,7 +612,9 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: '#FFD700',
   },
-  // HORIZONTAL LAYOUT CONTENT - SAMA DENGAN DELAY CONTENT
+  disabledButton: {
+    opacity: 0.6,
+  },
   leftContent: {
     flex: 1,
     alignItems: 'flex-start',
@@ -403,7 +639,7 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
   },
   activeTimerText: {
-    color: '#FFEB3B', // Yellow for active timer
+    color: '#FFEB3B',
   },
   activityCode: {
     fontSize: 32,
@@ -423,6 +659,75 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  statusContainer: {
+    backgroundColor: '#E8F5E8',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50',
+  },
+  statusTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2E7D32',
+    marginBottom: 5,
+  },
+  statusText: {
+    fontSize: 16,
+    color: '#2E7D32',
+    fontWeight: 'bold',
+  },
+  statusTime: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 5,
+  },
+  summaryContainer: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 10,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  summaryCategory: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    flex: 1,
+  },
+  summaryCount: {
+    fontSize: 12,
+    color: '#666',
+    width: 80,
+    textAlign: 'center',
+  },
+  summaryTime: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#2196F3',
+    fontFamily: 'monospace',
+    width: 70,
+    textAlign: 'right',
   },
   controlsContainer: {
     marginBottom: 20,
@@ -451,30 +756,6 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  statusContainer: {
-    backgroundColor: '#E8F5E8',
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: '#4CAF50',
-  },
-  statusTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2E7D32',
-    marginBottom: 5,
-  },
-  statusText: {
-    fontSize: 16,
-    color: '#2E7D32',
-    fontWeight: 'bold',
-  },
-  statusTime: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 5,
   },
 });
 

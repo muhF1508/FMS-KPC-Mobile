@@ -4,14 +4,20 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  TextInput,
   Alert,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 
-const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
-  // State untuk btn aktivitas yang sedang aktif
+const DelayContent = ({
+  globalData,
+  updateGlobalData,
+  setActiveTab,
+  apiService,
+}) => {
   const [activeActivity, setActiveActivity] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [activityStartTime, setActivityStartTime] = useState(null);
 
   // Timer state untuk setiap aktivitas
   const [timers, setTimers] = useState({
@@ -50,9 +56,10 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
     };
   }, []);
 
+  // Auto-start delay 006 if flag is set
   useEffect(() => {
     if (globalData.autoStartDelay006) {
-      console.log('Auto-starting delay 006 Wait on Truck');
+      console.log('🚀 Auto-starting delay 006 Wait on Truck');
       startActivityTimer('006');
 
       updateGlobalData({
@@ -70,8 +77,50 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
       .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  // Fungsi start timer aktivitas
+  const saveActivityToBackend = async (activityCode, startTime, endTime) => {
+    if (!globalData.documentNumber) {
+      console.warn('⚠️ No document number available, skipping backend save');
+      return false;
+    }
+
+    try {
+      setIsLoading(true);
+      const activityName =
+        delayActivities.find(act => act.code === activityCode)?.name ||
+        `DELAY_${activityCode}`;
+
+      console.log(`💾 Saving delay activity ${activityName} to backend...`);
+
+      const activityData = {
+        activityName: activityName,
+        startTime: startTime,
+        endTime: endTime,
+        sessionNumber: globalData.documentNumber,
+      };
+
+      const response = await apiService.saveActivity(activityData);
+
+      if (response.success) {
+        console.log(`✅ Delay activity ${activityName} saved successfully`);
+        return true;
+      } else {
+        console.error(`❌ Failed to save delay activity:`, response.message);
+        return false;
+      }
+    } catch (error) {
+      console.error(`💥 Error saving delay activity:`, error.message);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const startActivityTimer = activityCode => {
+    // Stop previous activity if any
+    if (activeActivity && activityStartTime) {
+      stopCurrentActivity();
+    }
+
     // Clear if exists interval
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -79,6 +128,7 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
 
     // Set aktivitas yang aktif
     setActiveActivity(activityCode);
+    setActivityStartTime(new Date());
 
     // Start new interval untuk aktivitas yang dipilih
     intervalRef.current = setInterval(() => {
@@ -106,9 +156,10 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
         isActive: true,
       },
     });
+
+    console.log(`🚀 Started delay activity: ${activityCode}`);
   };
 
-  // Handle btn aktivitas ketika di klik
   const handleActivityButton = activityCode => {
     if (activeActivity === activityCode) {
       // jika klik button yang sama, stop timer
@@ -119,50 +170,66 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
     }
   };
 
-  // Handle input manual code
-  const handleManualCodeSubmit = () => {
-    const code = manualCode.trim();
-
-    // Validasi kode
-    const validActivity = delayActivities.find(act => act.code === code);
-    if (!validActivity) {
-      Alert.alert(
-        'Error',
-        'Kode delay tidak valid. Gunakan: 001, 004, 005, 006, 007',
-      );
+  const stopCurrentActivity = async () => {
+    if (!activeActivity || !activityStartTime) {
+      console.warn('⚠️ No active activity to stop');
       return;
     }
 
-    // Start aktivitas berdasarkan kode - langsung start tanpa popup
-    startActivityTimer(code);
-    setManualCode(''); // Clear input
-  };
+    const currentActivityCode = activeActivity;
+    const startTime = activityStartTime;
+    const endTime = new Date();
 
-  // Stop aktivitas yang sedang berjalan
-  const stopCurrentActivity = () => {
+    // Stop timer
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
 
-    setActiveActivity(null);
+    // Save to backend
+    const saved = await saveActivityToBackend(
+      currentActivityCode,
+      startTime,
+      endTime,
+    );
+
+    // Update global data
+    const duration = timers[currentActivityCode];
     updateGlobalData({
       delayData: {
         ...globalData.delayData,
         isActive: false,
         endTime:
-          new Date().toLocaleTimeString('en-US', {
+          endTime.toLocaleTimeString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
             hour12: true,
           }) + ' WITA',
+        duration: duration,
       },
     });
 
-    Alert.alert('Info', 'Aktivitas delay telah dihentikan');
+    // Reset activity tracking
+    setActiveActivity(null);
+    setActivityStartTime(null);
+
+    const activityName =
+      delayActivities.find(act => act.code === currentActivityCode)?.name ||
+      currentActivityCode;
+
+    if (saved) {
+      Alert.alert(
+        'Aktivitas Selesai',
+        `${activityName} telah dihentikan dan disimpan\nDurasi: ${duration}`,
+      );
+    } else {
+      Alert.alert(
+        'Aktivitas Selesai (Offline)',
+        `${activityName} telah dihentikan\nDurasi: ${duration}\n\n⚠️ Data tersimpan lokal, akan disinkronkan saat online`,
+      );
+    }
   };
 
-  // Reset semua timer
   const resetAllTimers = () => {
     Alert.alert(
       'Konfirmasi Reset',
@@ -171,7 +238,12 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
         {text: 'Batal', style: 'cancel'},
         {
           text: 'Ya',
-          onPress: () => {
+          onPress: async () => {
+            // Stop current activity first
+            if (activeActivity) {
+              await stopCurrentActivity();
+            }
+
             if (intervalRef.current) {
               clearInterval(intervalRef.current);
             }
@@ -191,6 +263,20 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
             });
 
             setActiveActivity(null);
+            setActivityStartTime(null);
+
+            updateGlobalData({
+              delayData: {
+                activeCode: null,
+                activeName: '',
+                startTime: '',
+                endTime: '',
+                isActive: false,
+                reason: '',
+                duration: '00:00:00',
+              },
+            });
+
             Alert.alert('Success', 'Semua timer telah direset');
           },
         },
@@ -198,11 +284,35 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
     );
   };
 
+  const getConnectionStatus = () => {
+    if (!globalData.documentNumber) {
+      return (
+        <View style={styles.offlineIndicator}>
+          <Text style={styles.offlineText}>
+            📡 Offline Mode - Data tersimpan lokal
+          </Text>
+        </View>
+      );
+    }
+    return null;
+  };
+
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <Text style={styles.title}>Delay Activities</Text>
 
-      {/* Status Display - moved from bottom to top */}
+      {/* Connection Status */}
+      {getConnectionStatus()}
+
+      {/* Loading Indicator */}
+      {isLoading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="small" color="#2196F3" />
+          <Text style={styles.loadingText}>Saving activity...</Text>
+        </View>
+      )}
+
+      {/* Status Display */}
       {activeActivity && (
         <View style={styles.statusContainer}>
           <Text style={styles.statusTitle}>Status Aktivitas:</Text>
@@ -212,6 +322,9 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
           </Text>
           <Text style={styles.statusTime}>
             Dimulai: {globalData.delayData?.startTime || 'N/A'}
+          </Text>
+          <Text style={styles.statusTime}>
+            Durasi: {timers[activeActivity]}
           </Text>
         </View>
       )}
@@ -230,11 +343,12 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
                   {backgroundColor: activity.color},
                   activeActivity === activity.code &&
                     styles.activeActivityButton,
+                  isLoading && styles.disabledButton,
                 ]}
                 onPress={() => handleActivityButton(activity.code)}
+                disabled={isLoading}
                 activeOpacity={0.8}>
                 <View style={styles.activityContentHorizontal}>
-                  {/* Left Side: Activity Name + Timer */}
                   <View style={styles.leftContent}>
                     <Text style={styles.activityNameHorizontal}>
                       {activity.name}
@@ -249,7 +363,6 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
                     </Text>
                   </View>
 
-                  {/* Right Side: Activity Code + Running Status */}
                   <View style={styles.rightContent}>
                     <Text style={styles.activityCodeHorizontal}>
                       {activity.code}
@@ -278,11 +391,12 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
                   {backgroundColor: activity.color},
                   activeActivity === activity.code &&
                     styles.activeActivityButton,
+                  isLoading && styles.disabledButton,
                 ]}
                 onPress={() => handleActivityButton(activity.code)}
+                disabled={isLoading}
                 activeOpacity={0.8}>
                 <View style={styles.activityContentHorizontal}>
-                  {/* Left Side: Activity Name + Timer */}
                   <View style={styles.leftContent}>
                     <Text style={styles.activityNameHorizontal}>
                       {activity.name}
@@ -297,7 +411,6 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
                     </Text>
                   </View>
 
-                  {/* Right Side: Activity Code + Running Status */}
                   <View style={styles.rightContent}>
                     <Text style={styles.activityCodeHorizontal}>
                       {activity.code}
@@ -320,17 +433,43 @@ const DelayContent = ({globalData, updateGlobalData, setActiveTab}) => {
         </View>
       </View>
 
+      {/* Activity Summary */}
+      {Object.values(timers).some(time => time !== '00:00:00') && (
+        <View style={styles.summaryContainer}>
+          <Text style={styles.summaryTitle}>Ringkasan Delay Hari Ini:</Text>
+          {delayActivities.map(activity => {
+            const time = timers[activity.code];
+            if (time !== '00:00:00') {
+              return (
+                <View key={activity.code} style={styles.summaryRow}>
+                  <Text style={styles.summaryCode}>{activity.code}</Text>
+                  <Text style={styles.summaryName}>{activity.name}</Text>
+                  <Text style={styles.summaryTime}>{time}</Text>
+                </View>
+              );
+            }
+            return null;
+          })}
+        </View>
+      )}
+
       {/* Control Buttons */}
       <View style={styles.controlsContainer}>
         {activeActivity && (
           <TouchableOpacity
-            style={styles.stopButton}
-            onPress={stopCurrentActivity}>
-            <Text style={styles.controlButtonText}>Stop Current Activity</Text>
+            style={[styles.stopButton, isLoading && styles.disabledButton]}
+            onPress={stopCurrentActivity}
+            disabled={isLoading}>
+            <Text style={styles.controlButtonText}>
+              {isLoading ? 'Saving...' : 'Stop Current Activity'}
+            </Text>
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity style={styles.resetButton} onPress={resetAllTimers}>
+        <TouchableOpacity
+          style={[styles.resetButton, isLoading && styles.disabledButton]}
+          onPress={resetAllTimers}
+          disabled={isLoading}>
           <Text style={styles.resetButtonText}>Reset All Timers</Text>
         </TouchableOpacity>
       </View>
@@ -351,48 +490,33 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
   },
-  manualInputContainer: {
-    backgroundColor: 'white',
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  inputLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 10,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  codeInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#ddd',
+  offlineIndicator: {
+    backgroundColor: '#FFF3CD',
+    padding: 10,
     borderRadius: 8,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    fontSize: 16,
-    backgroundColor: '#fafafa',
-    marginRight: 10,
+    marginBottom: 15,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+  },
+  offlineText: {
+    fontSize: 12,
+    color: '#856404',
     textAlign: 'center',
+    fontWeight: 'bold',
   },
-  submitCodeButton: {
-    backgroundColor: '#2196F3',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+  loadingContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#E3F2FD',
+    padding: 10,
     borderRadius: 8,
+    marginBottom: 15,
   },
-  submitCodeText: {
-    color: 'white',
+  loadingText: {
+    marginLeft: 10,
     fontSize: 14,
+    color: '#1976D2',
     fontWeight: 'bold',
   },
   activitiesContainer: {
@@ -404,7 +528,6 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 15,
   },
-  // HORIZONTAL LAYOUT STYLES
   activitiesRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -429,6 +552,9 @@ const styles = StyleSheet.create({
   activeActivityButton: {
     borderWidth: 3,
     borderColor: '#FFD700',
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   activityContentHorizontal: {
     flexDirection: 'row',
@@ -466,7 +592,7 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
   },
   activeTimerText: {
-    color: '#FFEB3B', // Yellow for active timer
+    color: '#FFEB3B',
   },
   runningIndicatorHorizontal: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
@@ -480,6 +606,73 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  statusContainer: {
+    backgroundColor: '#E8F5E8',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50',
+  },
+  statusTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2E7D32',
+    marginBottom: 5,
+  },
+  statusText: {
+    fontSize: 16,
+    color: '#2E7D32',
+    fontWeight: 'bold',
+  },
+  statusTime: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 5,
+  },
+  summaryContainer: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 10,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  summaryCode: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#666',
+    width: 40,
+  },
+  summaryName: {
+    fontSize: 12,
+    color: '#333',
+    flex: 1,
+    marginHorizontal: 10,
+  },
+  summaryTime: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#2196F3',
+    fontFamily: 'monospace',
   },
   controlsContainer: {
     marginBottom: 20,
@@ -508,30 +701,6 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  statusContainer: {
-    backgroundColor: '#E8F5E8',
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: '#4CAF50',
-  },
-  statusTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2E7D32',
-    marginBottom: 5,
-  },
-  statusText: {
-    fontSize: 16,
-    color: '#2E7D32',
-    fontWeight: 'bold',
-  },
-  statusTime: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 5,
   },
 });
 

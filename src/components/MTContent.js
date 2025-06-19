@@ -8,6 +8,7 @@ import {
   Alert,
   Modal,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 
 const MTContent = ({
@@ -15,16 +16,18 @@ const MTContent = ({
   updateGlobalData,
   setActiveTab,
   navigation,
+  apiService,
 }) => {
   const [showHmAkhirModal, setShowHmAkhirModal] = useState(false);
   const [selectedMaintenanceType, setSelectedMaintenanceType] = useState('');
   const [hmAkhir, setHmAkhir] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const maintenanceTypes = [
     {
       type: 'BREAKDOWN',
       name: 'BREAKDOWN',
-      subtitle: 'Unschedule Maintenance', // Fixed typo: Unchedule → Unschedule
+      subtitle: 'Unscheduled Maintenance',
       color: '#F44336',
       icon: '🔧',
     },
@@ -38,55 +41,214 @@ const MTContent = ({
   ];
 
   const handleMaintenanceButton = maintenanceType => {
-    // Fixed parameter name
     setSelectedMaintenanceType(maintenanceType);
     setShowHmAkhirModal(true);
   };
 
-  const handleHmAkhirSubmit = () => {
+  const handleHmAkhirSubmit = async () => {
     if (!hmAkhir || hmAkhir.trim() === '') {
       Alert.alert('Error', 'Silakan Masukkan HM Akhir');
       return;
     }
 
-    // Update global data dengan maintenance info
-    updateGlobalData({
-      mtData: {
-        type: selectedMaintenanceType.type,
-        name: selectedMaintenanceType.name,
-        hmAkhir: hmAkhir,
-        endTime:
-          new Date().toLocaleTimeString('en-US', {
-            // Fixed locale format
-            timeZone: 'Asia/Makassar',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: true,
-          }) + ' WITA',
-        isCompleted: true,
-      },
-    });
+    // Validate HM format
+    const hmValue = parseInt(hmAkhir);
+    if (isNaN(hmValue) || hmValue < 0 || hmValue > 999999) {
+      Alert.alert('Error', 'HM Akhir harus berupa angka valid (0-999999)');
+      return;
+    }
 
-    setShowHmAkhirModal(false);
+    // Validate HM Akhir should be greater than HM Awal
+    const hmAwalValue = parseInt(globalData.hmAwal);
+    if (hmValue <= hmAwalValue) {
+      Alert.alert(
+        'Error',
+        `HM Akhir (${hmValue}) harus lebih besar dari HM Awal (${hmAwalValue})`,
+      );
+      return;
+    }
 
-    Alert.alert(
-      'Maintenance Selesai',
-      `${selectedMaintenanceType.name} telah selesai\nHM Akhir: ${hmAkhir}`, // Fixed typo: AKhir → Akhir
-      [
-        {
-          text: 'OK',
-          onPress: () => {
-            // Reset form
-            setHmAkhir('');
-            setSelectedMaintenanceType('');
+    setIsLoading(true);
 
-            // Navigate back to Login
-            navigation.navigate('Login');
-          },
+    try {
+      // Save maintenance activity to backend if online
+      if (globalData.documentNumber && apiService) {
+        console.log(`💾 Saving ${selectedMaintenanceType.name} to backend...`);
+
+        const activityData = {
+          activityName: selectedMaintenanceType.name,
+          startTime: new Date(Date.now() - 60000), // Assume started 1 minute ago
+          endTime: new Date(),
+          sessionNumber: globalData.documentNumber,
+        };
+
+        const response = await apiService.saveActivity(activityData);
+
+        if (response.success) {
+          console.log(`✅ ${selectedMaintenanceType.name} saved successfully`);
+        } else {
+          console.warn(
+            `⚠️ Failed to save ${selectedMaintenanceType.name}:`,
+            response.message,
+          );
+        }
+
+        // End session with backend
+        if (globalData.sessionId) {
+          console.log('🔄 Ending session with backend...');
+
+          const endResponse = await apiService.endSession(
+            globalData.sessionId,
+            hmValue,
+            selectedMaintenanceType.type,
+          );
+
+          if (endResponse.success) {
+            console.log('✅ Session ended successfully');
+          } else {
+            console.warn('⚠️ Failed to end session:', endResponse.message);
+          }
+        }
+      }
+
+      // Update global data dengan maintenance info
+      updateGlobalData({
+        mtData: {
+          type: selectedMaintenanceType.type,
+          name: selectedMaintenanceType.name,
+          hmAkhir: hmValue,
+          endTime:
+            new Date().toLocaleTimeString('en-US', {
+              timeZone: 'Asia/Makassar',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: true,
+            }) + ' WITA',
+          isCompleted: true,
         },
-      ],
-    );
+        hmAkhir: hmValue,
+      });
+
+      setShowHmAkhirModal(false);
+
+      // Calculate session summary
+      const sessionDuration = calculateSessionDuration();
+      const hmDifference = hmValue - hmAwalValue;
+
+      Alert.alert(
+        'Maintenance Selesai',
+        `${selectedMaintenanceType.name} telah selesai\n\n` +
+          `📊 Ringkasan Session:\n` +
+          `• Operator: ${globalData.employee?.NAME || globalData.welcomeId}\n` +
+          `• Unit: ${globalData.formData?.unitNumber}\n` +
+          `• HM Awal: ${globalData.hmAwal}\n` +
+          `• HM Akhir: ${hmValue}\n` +
+          `• Total HM: ${hmDifference} jam\n` +
+          `• Durasi Session: ${sessionDuration}\n` +
+          `• Total Loads: ${globalData.workData.loads}`,
+        [
+          {
+            text: 'Lihat Report',
+            onPress: () => {
+              // Navigate to report screen or show detailed summary
+              generateSessionReport();
+            },
+          },
+          {
+            text: 'Selesai',
+            onPress: () => {
+              // Reset form and navigate back to Login
+              resetFormAndNavigate();
+            },
+            style: 'default',
+          },
+        ],
+      );
+    } catch (error) {
+      console.error('💥 Error ending session:', error);
+
+      Alert.alert(
+        'Error',
+        `Gagal mengakhiri session: ${error.message}\n\nLanjut offline?`,
+        [
+          {
+            text: 'Coba Lagi',
+            style: 'cancel',
+          },
+          {
+            text: 'Lanjut Offline',
+            onPress: () => {
+              // Complete offline
+              setShowHmAkhirModal(false);
+              resetFormAndNavigate();
+            },
+          },
+        ],
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const calculateSessionDuration = () => {
+    // Simple duration calculation based on current timer
+    return globalData.currentTimer || '00:00:00';
+  };
+
+  const generateSessionReport = async () => {
+    if (!globalData.documentNumber || !apiService) {
+      Alert.alert('Info', 'Report hanya tersedia dalam mode online');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      console.log('📊 Generating session report...');
+
+      const response = await apiService.getSessionReport(
+        globalData.documentNumber,
+      );
+
+      if (response.success) {
+        const report = response.data;
+
+        Alert.alert(
+          'Session Report',
+          `📈 Detail Lengkap Session:\n\n` +
+            `👤 Operator: ${report.session?.operator_name || 'N/A'}\n` +
+            `🚛 Unit: ${report.session?.unit_id || 'N/A'}\n` +
+            `⏰ Total Activities: ${report.summary?.total_activities || 0}\n` +
+            `🔨 Work Time: ${report.summary?.work_hours || 0} hours\n` +
+            `⏱️ Delay Time: ${Math.round(
+              (report.summary?.delay_seconds || 0) / 3600,
+            )} hours\n` +
+            `⏸️ Idle Time: ${Math.round(
+              (report.summary?.idle_seconds || 0) / 3600,
+            )} hours\n` +
+            `📦 Total Loads: ${report.summary?.total_loads || 0}\n` +
+            `🏆 Productivity: ${report.summary?.productivity || 0} BCM/hour`,
+          [{text: 'OK', onPress: () => resetFormAndNavigate()}],
+        );
+      } else {
+        throw new Error(response.message || 'Failed to generate report');
+      }
+    } catch (error) {
+      console.error('💥 Error generating report:', error);
+      Alert.alert('Error', `Gagal generate report: ${error.message}`);
+      resetFormAndNavigate();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const resetFormAndNavigate = () => {
+    // Reset form
+    setHmAkhir('');
+    setSelectedMaintenanceType('');
+
+    // Navigate back to Login
+    navigation.navigate('Login');
   };
 
   const handleModalClose = () => {
@@ -95,9 +257,39 @@ const MTContent = ({
     setHmAkhir('');
   };
 
+  const getConnectionStatus = () => {
+    if (!globalData.documentNumber) {
+      return (
+        <View style={styles.offlineIndicator}>
+          <Text style={styles.offlineText}>
+            📡 Offline Mode - Session akan disimpan lokal
+          </Text>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.onlineIndicator}>
+        <Text style={styles.onlineText}>
+          🟢 Online - Session akan disinkronkan dengan server
+        </Text>
+      </View>
+    );
+  };
+
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <Text style={styles.title}>Maintenance (MT)</Text>
+
+      {/* Connection Status */}
+      {getConnectionStatus()}
+
+      {/* Loading Indicator */}
+      {isLoading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="small" color="#2196F3" />
+          <Text style={styles.loadingText}>Processing...</Text>
+        </View>
+      )}
 
       {/* Info Section */}
       <View style={styles.infoContainer}>
@@ -118,8 +310,10 @@ const MTContent = ({
               style={[
                 styles.maintenanceButton,
                 {backgroundColor: maintenance.color},
+                isLoading && styles.disabledButton,
               ]}
               onPress={() => handleMaintenanceButton(maintenance)}
+              disabled={isLoading}
               activeOpacity={0.8}>
               {/* Left Side: Icon + Name */}
               <View style={styles.leftContent}>
@@ -127,8 +321,6 @@ const MTContent = ({
                 <View style={styles.textContent}>
                   <Text style={styles.maintenanceName}>{maintenance.name}</Text>
                   <Text style={styles.maintenanceSubtitle}>
-                    {' '}
-                    {/* Fixed typo: maintenace → maintenance */}
                     {maintenance.subtitle}
                   </Text>
                 </View>
@@ -148,7 +340,10 @@ const MTContent = ({
         <Text style={styles.sessionTitle}>Informasi Sesi Saat Ini</Text>
         <View style={styles.sessionInfo}>
           <Text style={styles.sessionText}>
-            Operator: {globalData.welcomeId}
+            Operator: {globalData.employee?.NAME || globalData.welcomeId}
+          </Text>
+          <Text style={styles.sessionText}>
+            ID: {globalData.employee?.EMP_ID || globalData.welcomeId}
           </Text>
           <Text style={styles.sessionText}>
             Unit: {globalData.formData?.unitNumber || 'N/A'}
@@ -159,6 +354,17 @@ const MTContent = ({
           <Text style={styles.sessionText}>
             Durasi Shift: {globalData.currentTimer}
           </Text>
+          <Text style={styles.sessionText}>
+            Total Loads: {globalData.workData.loads}
+          </Text>
+          <Text style={styles.sessionText}>
+            Productivity: {globalData.workData.productivity}
+          </Text>
+          {globalData.documentNumber && (
+            <Text style={styles.sessionText}>
+              Doc Number: {globalData.documentNumber}
+            </Text>
+          )}
         </View>
       </View>
 
@@ -175,12 +381,16 @@ const MTContent = ({
               {selectedMaintenanceType.name}
             </Text>
             <Text style={styles.modalSubtitle}>
-              Masukkan Hour Meter akhir untuk menyelesaikan maintenance
+              Masukkan Hour Meter akhir untuk menyelesaikan maintenance dan
+              mengakhiri session
             </Text>
 
             <View style={styles.hmInfoContainer}>
               <Text style={styles.hmInfoText}>
                 HM Awal: {globalData.hmAwal || 'N/A'}
+              </Text>
+              <Text style={styles.hmInfoText}>
+                Durasi Session: {globalData.currentTimer}
               </Text>
             </View>
 
@@ -196,15 +406,27 @@ const MTContent = ({
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={styles.modalCancelButton}
-                onPress={handleModalClose}>
+                style={[
+                  styles.modalCancelButton,
+                  isLoading && styles.disabledButton,
+                ]}
+                onPress={handleModalClose}
+                disabled={isLoading}>
                 <Text style={styles.modalCancelText}>Batal</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.modalSubmitButton}
-                onPress={handleHmAkhirSubmit}>
-                <Text style={styles.modalSubmitText}>Selesai</Text>
+                style={[
+                  styles.modalSubmitButton,
+                  isLoading && styles.disabledButton,
+                ]}
+                onPress={handleHmAkhirSubmit}
+                disabled={isLoading}>
+                {isLoading ? (
+                  <ActivityIndicator color="white" size="small" />
+                ) : (
+                  <Text style={styles.modalSubmitText}>Selesai</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -226,6 +448,49 @@ const styles = StyleSheet.create({
     color: '#333',
     textAlign: 'center',
     marginBottom: 20,
+  },
+  offlineIndicator: {
+    backgroundColor: '#FFF3CD',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+  },
+  offlineText: {
+    fontSize: 12,
+    color: '#856404',
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  onlineIndicator: {
+    backgroundColor: '#D4EDDA',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50',
+  },
+  onlineText: {
+    fontSize: 12,
+    color: '#155724',
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#E3F2FD',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 15,
+  },
+  loadingText: {
+    marginLeft: 10,
+    fontSize: 14,
+    color: '#1976D2',
+    fontWeight: 'bold',
   },
   infoContainer: {
     backgroundColor: '#E3F2FD',
@@ -270,6 +535,9 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  disabledButton: {
+    opacity: 0.6,
+  },
   leftContent: {
     flex: 1,
     flexDirection: 'row',
@@ -289,7 +557,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   maintenanceSubtitle: {
-    // Fixed style name
     fontSize: 14,
     color: 'rgba(255, 255, 255, 0.9)',
     fontStyle: 'italic',

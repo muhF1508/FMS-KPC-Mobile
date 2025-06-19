@@ -8,21 +8,32 @@ import {
   TextInput,
   Alert,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Import content components
+// Import content components (pastikan path sesuai struktur project Anda)
 import DashboardContent from '../../components/DashboardContent';
 import WorkContent from '../../components/WorkContent';
 import DelayContent from '../../components/DelayContent';
 import IdleContent from '../../components/IdleContent';
 import MTContent from '../../components/MTContent';
 
+// Import API service
+import apiService from '../../services/ApiService';
+
 const DashboardScreen = ({route, navigation}) => {
-  // Data dari LoginScreen.js
-  const {selectedAction, formData, currentTimer} = route?.params || {};
+  // Data dari LoginScreen
+  const {employee, sessionData, selectedAction, formData, currentTimer} =
+    route?.params || {};
 
   // State untuk tab navigation
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('work');
+
+  // Loading states
+  const [isLoading, setIsLoading] = useState(false);
+  const [sessionCreated, setSessionCreated] = useState(false);
+  const [isEndingShift, setIsEndingShift] = useState(false);
 
   // Global state yang bisa diakses semua content components
   const [globalData, setGlobalData] = useState({
@@ -30,8 +41,14 @@ const DashboardScreen = ({route, navigation}) => {
     selectedAction: selectedAction || 'SHIFT CHANGE',
     formData: formData || {},
     currentTimer: currentTimer || '00:00:00',
+    employee: employee || {},
+    sessionData: sessionData || {},
 
-    // Data dasboard
+    // Session info
+    sessionId: null,
+    documentNumber: sessionData?.documentNumber || '',
+
+    // Data dashboard
     hmAwal: '',
     hmAkhir: '',
     isHmAwalSet: false,
@@ -70,7 +87,8 @@ const DashboardScreen = ({route, navigation}) => {
     },
 
     // Dashboard info
-    welcomeId: formData?.id || '18971',
+    welcomeId: employee?.EMP_ID || formData?.id || '18971',
+    welcomeName: employee?.NAME || 'Operator',
     shiftType: 'Shift Day',
     status: selectedAction || 'SHIFT CHANGE',
   });
@@ -84,13 +102,14 @@ const DashboardScreen = ({route, navigation}) => {
   // State untuk menampilkan modal popup Hm Awal
   const [showHmAwalModal, setShowHmAwalModal] = useState(true);
 
-  useEffect(() => {
-    console.log('=== DATETIME USEEFFECT STARTED ===');
+  // State for End Shift Modal
+  const [showEndShiftModal, setShowEndShiftModal] = useState(false);
+  const [hmAkhirShift, setHmAkhirShift] = useState('');
 
+  // Timer management for global timer
+  useEffect(() => {
     const updateDateTime = () => {
-      console.log('=== UPDATE FUNCTION CALLED ===');
       const now = new Date();
-      console.log('Current time:', now.toString());
 
       const formattedDate = now.toLocaleDateString('id-ID', {
         day: '2-digit',
@@ -105,28 +124,38 @@ const DashboardScreen = ({route, navigation}) => {
           hour12: true,
         }) + ' WITA';
 
-      console.log('Aboud to set state:', formattedDate, formattedTime);
-
       setCurrentDateTime({
         date: formattedDate,
         time: formattedTime,
       });
-
-      console.log('State set completed');
     };
 
-    // Update immediately
     updateDateTime();
-    console.log('Setting interval...');
-    // Update every second
     const interval = setInterval(updateDateTime, 1000);
 
-    // Cleanup
-    return () => {
-      console.log('Cleaning up interval');
-      clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, []);
+
+  // Save session data to AsyncStorage for offline access
+  useEffect(() => {
+    const saveSessionData = async () => {
+      try {
+        await AsyncStorage.setItem(
+          'current_session_data',
+          JSON.stringify({
+            ...globalData,
+            timestamp: new Date().toISOString(),
+          }),
+        );
+      } catch (error) {
+        console.error('Failed to save session data:', error);
+      }
+    };
+
+    if (globalData.sessionId) {
+      saveSessionData();
+    }
+  }, [globalData]);
 
   const updateGlobalData = newData => {
     setGlobalData(prev => ({
@@ -135,14 +164,237 @@ const DashboardScreen = ({route, navigation}) => {
     }));
   };
 
-  const handleHmAwalSubmit = () => {
+  const handleHmAwalSubmit = async () => {
     if (!globalData.hmAwal || globalData.hmAwal.trim() === '') {
       Alert.alert('Error', 'Silakan Masukkan HM Awal');
       return;
     }
-    updateGlobalData({isHmAwalSet: true});
-    setShowHmAwalModal(false);
-    Alert.alert('Success', `HM Awal ${globalData.hmAwal} telah disimpan`);
+
+    // Validate HM format
+    const hmValue = parseInt(globalData.hmAwal);
+    if (isNaN(hmValue) || hmValue < 0 || hmValue > 999999) {
+      Alert.alert('Error', 'HM Awal harus berupa angka valid (0-999999)');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      console.log('🔄 Creating session with HM Awal:', hmValue);
+
+      // Create session with backend
+      const response = await apiService.createSession(
+        globalData.sessionData.operatorId,
+        globalData.sessionData.unitId,
+        hmValue,
+        globalData.sessionData.actionType,
+      );
+
+      if (response.success) {
+        console.log('✅ Session created successfully:', response.session);
+
+        updateGlobalData({
+          isHmAwalSet: true,
+          sessionId: response.session.sessionId,
+          documentNumber: response.documentNumber,
+        });
+
+        setSessionCreated(true);
+        setShowHmAwalModal(false);
+
+        Alert.alert(
+          'Success',
+          `Session berhasil dibuat!\nDocument Number: ${response.documentNumber}\nHM Awal: ${hmValue}`,
+        );
+      } else {
+        throw new Error(response.message || 'Failed to create session');
+      }
+    } catch (error) {
+      console.error('❌ Session creation failed:', error);
+
+      // Handle offline mode - allow to continue without backend
+      Alert.alert(
+        'Session Creation Failed',
+        `${error.message}\n\nContinue in offline mode?`,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Continue Offline',
+            onPress: () => {
+              updateGlobalData({
+                isHmAwalSet: true,
+                sessionId: 'offline_' + Date.now(),
+                documentNumber: globalData.sessionData.documentNumber,
+              });
+              setSessionCreated(true);
+              setShowHmAwalModal(false);
+              Alert.alert(
+                'Offline Mode',
+                'Session dibuat dalam mode offline. Data akan disinkronkan saat koneksi tersedia.',
+              );
+            },
+          },
+        ],
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAkhirShift = () => {
+    Alert.alert('Konfirmasi', 'Apakah anda yakin ingin mengakhiri shift?', [
+      {text: 'Batal', style: 'cancel'},
+      {
+        text: 'Ya',
+        onPress: () => {
+          setShowEndShiftModal(true);
+        },
+      },
+    ]);
+  };
+
+  const handleEndShiftSubmit = async () => {
+    if (!hmAkhirShift || hmAkhirShift.trim() === '') {
+      Alert.alert('Error', 'Silakan Masukkan HM Akhir');
+      return;
+    }
+
+    // Validate HM format
+    const hmValue = parseInt(hmAkhirShift);
+    if (isNaN(hmValue) || hmValue < 0 || hmValue > 999999) {
+      Alert.alert('Error', 'HM Akhir harus berupa angka valid (0-999999)');
+      return;
+    }
+
+    // Validate HM Akhir should be greater than HM Awal
+    const hmAwalValue = parseInt(globalData.hmAwal);
+    if (hmValue <= hmAwalValue) {
+      Alert.alert(
+        'Error',
+        `HM Akhir (${hmValue}) harus lebih besar dari HM Awal (${hmAwalValue})`,
+      );
+      return;
+    }
+
+    setIsEndingShift(true);
+
+    try {
+      console.log('🔄 Ending shift with HM Akhir:', hmValue);
+
+      // End session with backend if online
+      if (globalData.sessionId && globalData.documentNumber) {
+        console.log('💾 Ending session with backend...');
+
+        const response = await apiService.endSession(
+          globalData.sessionId,
+          hmValue,
+          'SHIFT_END',
+        );
+
+        if (response.success) {
+          console.log('✅ Session ended successfully with backend');
+        } else {
+          console.warn(
+            '⚠️ Failed to end session with backend:',
+            response.message,
+          );
+        }
+      }
+
+      // Calculate session summary
+      const sessionDuration = globalData.currentTimer;
+      const hmDifference = hmValue - hmAwalValue;
+
+      // Save final session data
+      const finalSessionData = {
+        ...globalData,
+        hmAkhir: hmValue,
+        endTime: new Date().toISOString(),
+        status: 'SHIFT_ENDED',
+        summary: {
+          duration: sessionDuration,
+          hmDifference: hmDifference,
+          totalLoads: globalData.workData.loads,
+          productivity: globalData.workData.productivity,
+        },
+      };
+
+      await AsyncStorage.setItem(
+        'last_session_data',
+        JSON.stringify(finalSessionData),
+      );
+
+      setShowEndShiftModal(false);
+
+      // Show summary before navigation
+      Alert.alert(
+        'Shift Selesai! 🎉',
+        `Ringkasan Shift:\n\n` +
+          `👤 Operator: ${
+            globalData.employee?.NAME || globalData.welcomeId
+          }\n` +
+          `🚛 Unit: ${globalData.formData?.unitNumber}\n` +
+          `⏰ Durasi: ${sessionDuration}\n` +
+          `📏 HM Awal: ${globalData.hmAwal}\n` +
+          `📏 HM Akhir: ${hmValue}\n` +
+          `📊 Total HM: ${hmDifference} jam\n` +
+          `📦 Total Loads: ${globalData.workData.loads}\n` +
+          `🏆 Productivity: ${globalData.workData.productivity}\n\n` +
+          `Terima kasih atas kerja keras Anda! 💪`,
+        [
+          {
+            text: 'Selesai',
+            onPress: () => navigation.navigate('Login'),
+          },
+        ],
+      );
+    } catch (error) {
+      console.error('💥 Error ending shift:', error);
+
+      Alert.alert(
+        'Error',
+        `Gagal mengakhiri shift: ${error.message}\n\nLanjut offline?`,
+        [
+          {
+            text: 'Coba Lagi',
+            style: 'cancel',
+          },
+          {
+            text: 'Lanjut Offline',
+            onPress: async () => {
+              // Save offline and navigate
+              try {
+                const offlineSessionData = {
+                  ...globalData,
+                  hmAkhir: hmValue,
+                  endTime: new Date().toISOString(),
+                  status: 'SHIFT_ENDED_OFFLINE',
+                };
+                await AsyncStorage.setItem(
+                  'last_session_data',
+                  JSON.stringify(offlineSessionData),
+                );
+              } catch (saveError) {
+                console.error('Failed to save offline data:', saveError);
+              }
+
+              setShowEndShiftModal(false);
+              navigation.navigate('Login');
+            },
+          },
+        ],
+      );
+    } finally {
+      setIsEndingShift(false);
+    }
+  };
+
+  const handleEndShiftModalClose = () => {
+    setShowEndShiftModal(false);
+    setHmAkhirShift('');
   };
 
   // Navigation handlers
@@ -150,24 +402,17 @@ const DashboardScreen = ({route, navigation}) => {
     setActiveTab(tabName.toLowerCase());
   };
 
-  const handleAkhirShift = () => {
-    Alert.alert('Konfirmasi', 'Apakah anda yakin ingin mengakhiri shift?', [
-      {text: 'Batal', style: 'cancel'},
-      {text: 'Ya', onPress: () => navigation.goBack()},
-    ]);
-  };
-
   // Status color mapping
   const getStatusColor = status => {
     switch (status) {
       case 'SAFETY TALK':
-        return '#4CAF50'; // GREEN
+        return '#4CAF50';
       case 'RAIN':
-        return '#2196F3'; // BLUE
+        return '#2196F3';
       case 'BREAKDOWN':
-        return '#FF9800'; // ORANGE
+        return '#FF9800';
       case 'SHIFT CHANGE':
-        return '#00BCD4'; // GREEN
+        return '#00BCD4';
       case 'WORK':
         return '#4CAF50';
       case 'DELAY':
@@ -177,7 +422,7 @@ const DashboardScreen = ({route, navigation}) => {
       case 'MT':
         return '#673AB7';
       default:
-        return '#00BCD4'; // BLUE
+        return '#00BCD4';
     }
   };
 
@@ -187,6 +432,7 @@ const DashboardScreen = ({route, navigation}) => {
       globalData,
       updateGlobalData,
       setActiveTab,
+      apiService, // Pass apiService to all components
     };
 
     switch (activeTab) {
@@ -199,13 +445,13 @@ const DashboardScreen = ({route, navigation}) => {
       case 'mt':
         return <MTContent {...contentProps} navigation={navigation} />;
       default:
-        return <DashboardContent {...contentProps} />;
+        return <WorkContent {...contentProps} />;
     }
   };
 
   // Get active tab title for status
   const getActiveTabStatus = () => {
-    if (activeTab === 'dashboard') return globalData.selectedAction;
+    if (activeTab === 'work') return 'WORK';
     return activeTab.toUpperCase();
   };
 
@@ -217,7 +463,7 @@ const DashboardScreen = ({route, navigation}) => {
         <View style={styles.topRow}>
           <View style={styles.leftColumn}>
             <Text style={styles.welcomeLabel}>Welcome :</Text>
-            <Text style={styles.welcomeValue}>{globalData.welcomeId}</Text>
+            <Text style={styles.welcomeValue}>{globalData.welcomeName}</Text>
             <Text style={styles.shiftValue}>{globalData.shiftType}</Text>
           </View>
 
@@ -265,7 +511,18 @@ const DashboardScreen = ({route, navigation}) => {
             <Text style={styles.timerText}>{globalData.currentTimer}</Text>
           </View>
         </View>
+
+        {/* Session Info Row */}
+        <View style={styles.sessionInfoRow}>
+          <Text style={styles.sessionInfoText}>
+            Doc: {globalData.documentNumber || 'N/A'}
+            {globalData.sessionId &&
+              ` | Session: ${globalData.sessionId.toString().slice(-6)}`}
+            {!sessionCreated && ' | ⚠️ Creating...'}
+          </Text>
+        </View>
       </View>
+
       {/* Modal popup blocking untuk input Hm Awal (WAJIB DIISI) */}
       <Modal
         visible={showHmAwalModal && !globalData.isHmAwalSet}
@@ -280,9 +537,20 @@ const DashboardScreen = ({route, navigation}) => {
               Silakan masukkan Hour Meter awal sebelum memulai shift
             </Text>
 
+            {employee && (
+              <View style={styles.employeeInfo}>
+                <Text style={styles.employeeInfoText}>
+                  Operator: {employee.NAME} ({employee.EMP_ID})
+                </Text>
+                <Text style={styles.employeeInfoText}>
+                  Unit: {globalData.formData?.unitNumber}
+                </Text>
+              </View>
+            )}
+
             <TextInput
               style={styles.modalInput}
-              placeholder="Contoh 1200"
+              placeholder="Contoh: 1200"
               placeholderTextColor="#999"
               value={globalData.hmAwal}
               onChangeText={text => updateGlobalData({hmAwal: text})}
@@ -291,18 +559,106 @@ const DashboardScreen = ({route, navigation}) => {
             />
 
             <TouchableOpacity
-              style={styles.modalButton}
-              onPress={handleHmAwalSubmit}>
-              <Text style={styles.modalButtonText}>Simpan</Text>
+              style={[
+                styles.modalButton,
+                isLoading && styles.modalButtonDisabled,
+              ]}
+              onPress={handleHmAwalSubmit}
+              disabled={isLoading}>
+              {isLoading ? (
+                <ActivityIndicator color="white" size="small" />
+              ) : (
+                <Text style={styles.modalButtonText}>
+                  Simpan & Mulai Session
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
+      {/* Modal HM Akhir untuk End Shift */}
+      <Modal
+        visible={showEndShiftModal}
+        transparent={true}
+        animationType="fade"
+        statusBarTranslucent={true}
+        onRequestClose={handleEndShiftModalClose}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Akhir Shift</Text>
+            <Text style={styles.modalSubtitle}>
+              Masukkan Hour Meter akhir untuk menyelesaikan shift
+            </Text>
+
+            {/* Current Session Summary */}
+            <View style={styles.sessionSummary}>
+              <Text style={styles.summaryTitle}>📊 Ringkasan Shift</Text>
+              <Text style={styles.summaryText}>
+                Operator: {globalData.employee?.NAME || globalData.welcomeId}
+              </Text>
+              <Text style={styles.summaryText}>
+                Unit: {globalData.formData?.unitNumber}
+              </Text>
+              <Text style={styles.summaryText}>
+                HM Awal: {globalData.hmAwal}
+              </Text>
+              <Text style={styles.summaryText}>
+                Durasi: {globalData.currentTimer}
+              </Text>
+              <Text style={styles.summaryText}>
+                Total Loads: {globalData.workData.loads}
+              </Text>
+              <Text style={styles.summaryText}>
+                Productivity: {globalData.workData.productivity}
+              </Text>
+            </View>
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Masukkan HM Akhir (contoh: 1250)"
+              placeholderTextColor="#999"
+              value={hmAkhirShift}
+              onChangeText={setHmAkhirShift}
+              keyboardType="numeric"
+              autoFocus={true}
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[
+                  styles.modalCancelButton,
+                  isEndingShift && styles.modalButtonDisabled,
+                ]}
+                onPress={handleEndShiftModalClose}
+                disabled={isEndingShift}>
+                <Text style={styles.modalCancelText}>Batal</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.modalSubmitButton,
+                  isEndingShift && styles.modalButtonDisabled,
+                ]}
+                onPress={handleEndShiftSubmit}
+                disabled={isEndingShift}>
+                {isEndingShift ? (
+                  <ActivityIndicator color="white" size="small" />
+                ) : (
+                  <Text style={styles.modalSubmitText}>Akhiri Shift</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Dynamic Main Content Area - based on active tab */}
       <View style={styles.contentArea}>{renderContent()}</View>
-      {/* NEW: Global delay code input - always visible above bottom navigation */}
+
+      {/* Global delay code input - always visible above bottom navigation */}
       <View style={styles.globalDelayInputContainer}>
-        <Text style={styles.delayInputLabel}>Delay Code:</Text>
+        <Text style={styles.delayInputLabel}>Quick Delay:</Text>
         <View style={styles.delayInputRow}>
           <TextInput
             style={styles.delayCodeInput}
@@ -316,7 +672,8 @@ const DashboardScreen = ({route, navigation}) => {
           </TouchableOpacity>
         </View>
       </View>
-      {/* Bottom Navigation Section  - Always visible */}
+
+      {/* Bottom Navigation Section - Always visible */}
       <View style={styles.bottomNavigation}>
         <TouchableOpacity
           style={[
@@ -420,6 +777,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    marginBottom: 5,
+  },
+  sessionInfoRow: {
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  sessionInfoText: {
+    fontSize: 12,
+    color: '#333',
+    fontWeight: '500',
   },
   leftColumn: {
     flex: 1,
@@ -477,6 +844,7 @@ const styles = StyleSheet.create({
     color: '#333',
     fontWeight: '500',
   },
+  // Modal styles
   modalOverlay: {
     position: 'absolute',
     top: 0,
@@ -507,6 +875,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
   },
+  employeeInfo: {
+    backgroundColor: '#E8F5E8',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 15,
+    width: '100%',
+  },
+  employeeInfoText: {
+    fontSize: 12,
+    color: '#2E7D32',
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
   modalInput: {
     width: '100%',
     borderWidth: 1,
@@ -519,6 +900,57 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: 'center',
   },
+  sessionSummary: {
+    backgroundColor: '#f8f9fa',
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderLeftWidth: 4,
+    borderLeftColor: '#2196F3',
+  },
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  summaryText: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 3,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 10,
+  },
+  modalCancelButton: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalSubmitButton: {
+    flex: 1,
+    backgroundColor: '#F44336',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  modalSubmitText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   modalButton: {
     backgroundColor: '#2196F3',
     paddingHorizontal: 30,
@@ -527,15 +959,64 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
   },
+  modalButtonDisabled: {
+    backgroundColor: '#ccc',
+    opacity: 0.6,
+  },
   modalButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
   },
-  // Content area - dynamic content
+  // Content area
   contentArea: {
     flex: 1,
   },
+  // Global delay input
+  globalDelayInputContainer: {
+    backgroundColor: 'white',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  delayInputLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    marginRight: 10,
+  },
+  delayInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  delayCodeInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    backgroundColor: '#fafafa',
+    marginRight: 8,
+    textAlign: 'center',
+    width: 120,
+  },
+  delayStartButton: {
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  delayStartButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  // Bottom navigation
   bottomNavigation: {
     flexDirection: 'row',
     backgroundColor: 'white',
@@ -594,50 +1075,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     lineHeight: 14,
-  },
-  // NEW: Global delay code input styles
-  globalDelayInputContainer: {
-    backgroundColor: 'white',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  delayInputLabel: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#333',
-    marginRight: 10,
-  },
-  delayInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  delayCodeInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 14,
-    backgroundColor: '#fafafa',
-    marginRight: 8,
-    textAlign: 'center',
-    width: 120,
-  },
-  delayStartButton: {
-    backgroundColor: '#2196F3',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
-  },
-  delayStartButtonText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
   },
 });
 

@@ -16,7 +16,6 @@ class ApiService {
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
-        timeout: 10000, // 10 second timeout
       };
 
       if (data && (method === 'POST' || method === 'PUT')) {
@@ -26,7 +25,14 @@ class ApiService {
       console.log(`🌐 API Request: ${method} ${this.baseURL}${endpoint}`);
       if (data) console.log('📤 Request Data:', data);
 
-      const response = await fetch(`${this.baseURL}${endpoint}`, config);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Request timeout')), 10000),
+      );
+
+      const response = await Promise.race([
+        fetch(`${this.baseURL}${endpoint}`, config),
+        timeoutPromise,
+      ]);
 
       if (!response.ok) {
         let errorMessage = `HTTP ${response.status}`;
@@ -69,7 +75,7 @@ class ApiService {
         throw new Error('Network Error - Periksa koneksi internet Anda');
       }
 
-      if (error.name === 'AbortError' || error.message.includes(timeout)) {
+      if (error.message === 'Request timeout') {
         throw new Error('Timeout - Server tidak merespons');
       }
 
@@ -80,16 +86,32 @@ class ApiService {
   // Health check
   async checkHealth() {
     try {
-      const response = await fetch(`${this.healthURL}/health`, {
-        timeout: 5000, // 5 second timeout for health check
-      });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Health check timeout')), 5000),
+      );
+
+      const response = await Promise.race([
+        fetch(`${this.healthURL}/health`),
+        timeoutPromise,
+      ]);
+
       const result = await response.json();
       return result;
     } catch (error) {
       console.error('Health check failed:', error);
+
+      let errorMessage =
+        'Server tidak dapat dijangkau, Periksa koneksi internet Anda.';
+
+      if (error.message === 'Health check timeout') {
+        errorMessage = 'Health check timeout. Server tidak merespons.';
+      } else if (error.message.includes('Network')) {
+        errorMessage = 'Network error, Periksa koneksi internet Anda.';
+      }
+
       return {
         success: false,
-        message: 'Server tidak dapat dijangkau. Periksa koneksi internet Anda.',
+        message: errorMessage,
       };
     }
   }
@@ -128,16 +150,24 @@ class ApiService {
       // Customize error message
       let errorMessage = 'ID Karyawan tidak terdaftar dalam database';
 
-      if (error.message.includes('HTTP 404')) {
+      if (
+        error.message.includes('HTTP 404') ||
+        error.message.includes('Not Found')
+      ) {
         errorMessage = 'ID Karyawan tidak ditemukan dalam database';
-      } else if (error.message.includes('HTTP 500')) {
+      } else if (
+        error.message.includes('HTTP 500') ||
+        error.message.includes('Internal Server Error')
+      ) {
         errorMessage = 'Terjadi kesalahan pada server, Silakan coba lagi.';
-      } else if (error.message.includes('Network')) {
+      } else if (error.message.includes('Network Error')) {
         errorMessage =
           'Koneksi ke server bermasalah. Periksa koneksi internet Anda.';
-      } else if (error.message.includes('timeout')) {
+      } else if (error.message.includes('Timeout')) {
         errorMessage =
           'Koneksi timeout, Server sedang sibuk, silakan coba lagi.';
+      } else if (error.message.includes('Service Unavailable')) {
+        errorMessage = 'Server sedang maintenance. Silakan coba lagi nanti.';
       }
 
       return {
