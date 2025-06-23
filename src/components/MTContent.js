@@ -144,7 +144,7 @@ const MTContent = ({
           `• Unit: ${globalData.formData?.unitNumber}\n` +
           `• HM Awal: ${globalData.hmAwal}\n` +
           `• HM Akhir: ${hmValue}\n` +
-          `• Total HM: ${hmDifference} jam\n` +
+          `• Total HM: ${hmDifference} HM\n` +
           `• Durasi Session: ${sessionDuration}\n` +
           `• Total Loads: ${globalData.workData.loads}`,
         [

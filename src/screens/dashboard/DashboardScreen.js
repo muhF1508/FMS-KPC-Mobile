@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef, use} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Import content components (pastikan path sesuai struktur project Anda)
+// Import content components
 import DashboardContent from '../../components/DashboardContent';
 import WorkContent from '../../components/WorkContent';
 import DelayContent from '../../components/DelayContent';
@@ -39,6 +39,13 @@ const DashboardScreen = ({route, navigation}) => {
   const [sessionTimer, setSessionTimer] = useState(currentTimer || '00:00:00');
   const timerIntervalRef = useRef(null);
   const timerSecondsRef = useRef(0);
+
+  // State untuk menyimpan tab content refs
+  const contentRefs = useRef({
+    work: null,
+    delay: null,
+    idle: null,
+  });
 
   // Global state yang bisa diakses semua content components
   const [globalData, setGlobalData] = useState({
@@ -91,6 +98,13 @@ const DashboardScreen = ({route, navigation}) => {
       duration: '00:00:00',
     },
 
+    // Persistent data untuk timer states
+    persistentTimers: {
+      delay: {},
+      idle: {},
+      work: {},
+    },
+
     // Dashboard info
     welcomeId: employee?.EMP_ID || formData?.id || '18971',
     welcomeName: employee?.NAME || 'Operator',
@@ -122,20 +136,17 @@ const DashboardScreen = ({route, navigation}) => {
         const seconds = parseInt(parts[2]) || 0;
         return hours * 3600 + minutes * 60 + seconds;
       }
-      return 0; // Default to 0 seconds if format is invalid
+      return 0;
     };
 
-    // Set initial timer seconds dari currentTimer yang diterima dari LoginScreen
     timerSecondsRef.current = parseTimer(currentTimer || '00:00:00');
 
-    // Start timer interval
     timerIntervalRef.current = setInterval(() => {
-      timerSecondsRef.current += 1; // Increment timer by 1 second
+      timerSecondsRef.current += 1;
       const formattedTime = formatSessionTime(timerSecondsRef.current);
 
       setSessionTimer(formattedTime);
 
-      // Update global data dengan timer terbaru
       setGlobalData(prev => ({
         ...prev,
         currentTimer: formattedTime,
@@ -144,14 +155,13 @@ const DashboardScreen = ({route, navigation}) => {
 
     console.log(`✅ Session timer started from: ${currentTimer}`);
 
-    // Cleanup function to clear interval on unmount
     return () => {
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
         console.log('🛑 Session timer stopped');
       }
     };
-  }, []); // Empty dependency array to run only once on mount
+  }, []);
 
   // Format timer function
   const formatSessionTime = totalSeconds => {
@@ -223,13 +233,48 @@ const DashboardScreen = ({route, navigation}) => {
     }));
   };
 
+  // NEW: Function to handle tab switching with content persistence
+  const handleTabNavigation = async tabName => {
+    const newTab = tabName.toLowerCase();
+    const currentTab = activeTab;
+
+    console.log(`🔄 Switching from ${currentTab} to ${newTab}`);
+
+    // Step 1: Save current tab state if there's an active activity
+    if (currentTab === 'delay' && globalData.delayData.isActive) {
+      console.log('💾 Saving delay activity before tab switch');
+      // Trigger save from DelayContent
+      if (contentRefs.current.delay?.saveCurrentActivity) {
+        await contentRefs.current.delay.saveCurrentActivity();
+      }
+    } else if (currentTab === 'idle' && globalData.idleData.isActive) {
+      console.log('💾 Saving idle activity before tab switch');
+      // Trigger save from IdleContent
+      if (contentRefs.current.idle?.saveCurrentActivity) {
+        await contentRefs.current.idle.saveCurrentActivity();
+      }
+    }
+
+    // Step 2: Update persistent timers untuk tab yang ditinggalkan
+    const updatedPersistentTimers = {
+      ...globalData.persistentTimers,
+      [currentTab]: contentRefs.current[currentTab]?.getTimersState?.() || {},
+    };
+
+    updateGlobalData({
+      persistentTimers: updatedPersistentTimers,
+    });
+
+    // Step 3: Switch to new tab
+    setActiveTab(newTab);
+  };
+
   const handleHmAwalSubmit = async () => {
     if (!globalData.hmAwal || globalData.hmAwal.trim() === '') {
       Alert.alert('Error', 'Silakan Masukkan HM Awal');
       return;
     }
 
-    // Validate HM format
     const hmValue = parseInt(globalData.hmAwal);
     if (isNaN(hmValue) || hmValue < 0 || hmValue > 999999) {
       Alert.alert('Error', 'HM Awal harus berupa angka valid (0-999999)');
@@ -241,7 +286,6 @@ const DashboardScreen = ({route, navigation}) => {
     try {
       console.log('🔄 Creating session with HM Awal:', hmValue);
 
-      // Create session with backend
       const response = await apiService.createSession(
         globalData.sessionData.operatorId,
         globalData.sessionData.unitId,
@@ -271,7 +315,6 @@ const DashboardScreen = ({route, navigation}) => {
     } catch (error) {
       console.error('❌ Session creation failed:', error);
 
-      // Handle offline mode - allow to continue without backend
       Alert.alert(
         'Session Creation Failed',
         `${error.message}\n\nContinue in offline mode?`,
@@ -321,14 +364,12 @@ const DashboardScreen = ({route, navigation}) => {
       return;
     }
 
-    // Validate HM format
     const hmValue = parseInt(hmAkhirShift);
     if (isNaN(hmValue) || hmValue < 0 || hmValue > 999999) {
       Alert.alert('Error', 'HM Akhir harus berupa angka valid (0-999999)');
       return;
     }
 
-    // Validate HM Akhir should be greater than HM Awal
     const hmAwalValue = parseInt(globalData.hmAwal);
     if (hmValue <= hmAwalValue) {
       Alert.alert(
@@ -343,7 +384,18 @@ const DashboardScreen = ({route, navigation}) => {
     try {
       console.log('🔄 Ending shift with HM Akhir:', hmValue);
 
-      // End session with backend if online
+      // Save any active activities before ending shift
+      const currentTab = activeTab;
+      if (currentTab === 'delay' && globalData.delayData.isActive) {
+        if (contentRefs.current.delay?.saveCurrentActivity) {
+          await contentRefs.current.delay.saveCurrentActivity();
+        }
+      } else if (currentTab === 'idle' && globalData.idleData.isActive) {
+        if (contentRefs.current.idle?.saveCurrentActivity) {
+          await contentRefs.current.idle.saveCurrentActivity();
+        }
+      }
+
       if (globalData.sessionId && globalData.documentNumber) {
         console.log('💾 Ending session with backend...');
 
@@ -363,11 +415,9 @@ const DashboardScreen = ({route, navigation}) => {
         }
       }
 
-      // Calculate session summary
       const sessionDuration = globalData.currentTimer;
       const hmDifference = hmValue - hmAwalValue;
 
-      // Save final session data
       const finalSessionData = {
         ...globalData,
         hmAkhir: hmValue,
@@ -388,7 +438,6 @@ const DashboardScreen = ({route, navigation}) => {
 
       setShowEndShiftModal(false);
 
-      // Show summary before navigation
       Alert.alert(
         'Shift Selesai! 🎉',
         `Ringkasan Shift:\n\n` +
@@ -399,7 +448,7 @@ const DashboardScreen = ({route, navigation}) => {
           `⏰ Durasi: ${sessionDuration}\n` +
           `📏 HM Awal: ${globalData.hmAwal}\n` +
           `📏 HM Akhir: ${hmValue}\n` +
-          `📊 Total HM: ${hmDifference} jam\n` +
+          `📊 Total HM: ${hmDifference} HM\n` +
           `📦 Total Loads: ${globalData.workData.loads}\n` +
           `🏆 Productivity: ${globalData.workData.productivity}\n\n` +
           `Terima kasih atas kerja keras Anda! 💪`,
@@ -424,7 +473,6 @@ const DashboardScreen = ({route, navigation}) => {
           {
             text: 'Lanjut Offline',
             onPress: async () => {
-              // Save offline and navigate
               try {
                 const offlineSessionData = {
                   ...globalData,
@@ -456,11 +504,6 @@ const DashboardScreen = ({route, navigation}) => {
     setHmAkhirShift('');
   };
 
-  // Navigation handlers
-  const handleTabNavigation = tabName => {
-    setActiveTab(tabName.toLowerCase());
-  };
-
   // Status color mapping
   const getStatusColor = status => {
     switch (status) {
@@ -485,26 +528,54 @@ const DashboardScreen = ({route, navigation}) => {
     }
   };
 
-  // Render content berdasarkan active tab
+  // Render content berdasarkan active tab dengan ref support
   const renderContent = () => {
     const contentProps = {
       globalData,
       updateGlobalData,
-      setActiveTab,
-      apiService, // Pass apiService to all components
+      setActiveTab: handleTabNavigation, // Use new handler
+      apiService,
     };
 
     switch (activeTab) {
       case 'work':
-        return <WorkContent {...contentProps} />;
+        return (
+          <WorkContent
+            {...contentProps}
+            ref={ref => {
+              contentRefs.current.work = ref;
+            }}
+          />
+        );
       case 'delay':
-        return <DelayContent {...contentProps} />;
+        return (
+          <DelayContent
+            {...contentProps}
+            ref={ref => {
+              contentRefs.current.delay = ref;
+            }}
+          />
+        );
       case 'idle':
-        return <IdleContent {...contentProps} />;
+        return (
+          <IdleContent
+            {...contentProps}
+            ref={ref => {
+              contentRefs.current.idle = ref;
+            }}
+          />
+        );
       case 'mt':
         return <MTContent {...contentProps} navigation={navigation} />;
       default:
-        return <WorkContent {...contentProps} />;
+        return (
+          <WorkContent
+            {...contentProps}
+            ref={ref => {
+              contentRefs.current.work = ref;
+            }}
+          />
+        );
     }
   };
 
@@ -650,7 +721,6 @@ const DashboardScreen = ({route, navigation}) => {
               Masukkan Hour Meter akhir untuk menyelesaikan shift
             </Text>
 
-            {/* Current Session Summary */}
             <View style={styles.sessionSummary}>
               <Text style={styles.summaryTitle}>📊 Ringkasan Shift</Text>
               <Text style={styles.summaryText}>
@@ -717,7 +787,7 @@ const DashboardScreen = ({route, navigation}) => {
 
       {/* Global delay code input - always visible above bottom navigation */}
       <View style={styles.globalDelayInputContainer}>
-        <Text style={styles.delayInputLabel}>Quick Delay:</Text>
+        <Text style={styles.delayInputLabel}>Masukkan Delay Kode:</Text>
         <View style={styles.delayInputRow}>
           <TextInput
             style={styles.delayCodeInput}
@@ -816,6 +886,7 @@ const DashboardScreen = ({route, navigation}) => {
   );
 };
 
+// Styles tetap sama seperti sebelumnya
 const styles = StyleSheet.create({
   container: {
     flex: 1,
