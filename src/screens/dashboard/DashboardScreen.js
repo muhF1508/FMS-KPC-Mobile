@@ -10,17 +10,17 @@ import {
   Modal,
   ActivityIndicator,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Import content components
-import DashboardContent from '../../components/DashboardContent';
 import WorkContent from '../../components/WorkContent';
 import DelayContent from '../../components/DelayContent';
 import IdleContent from '../../components/IdleContent';
 import MTContent from '../../components/MTContent';
+import ActivityHistoryModal from '../../components/ActivityHistoryModal';
 
-// Import API service
+// Import services
 import apiService from '../../services/ApiService';
+import ActivityHistoryService from '../../services/ActivityHistoryService';
 
 const DashboardScreen = ({route, navigation}) => {
   // Data dari LoginScreen
@@ -35,19 +35,29 @@ const DashboardScreen = ({route, navigation}) => {
   const [sessionCreated, setSessionCreated] = useState(false);
   const [isEndingShift, setIsEndingShift] = useState(false);
 
+  // History-related states
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historyCount, setHistoryCount] = useState(0);
+
   // Timer states
   const [sessionTimer, setSessionTimer] = useState(currentTimer || '00:00:00');
   const timerIntervalRef = useRef(null);
   const timerSecondsRef = useRef(0);
 
-  // State untuk menyimpan tab content refs
-  const contentRefs = useRef({
-    work: null,
-    delay: null,
-    idle: null,
+  // Global Activity Timer State
+  const [globalActivity, setGlobalActivity] = useState({
+    isActive: false,
+    activityName: '',
+    activityCode: '',
+    sourceTab: '',
+    startTime: null,
+    duration: '00:00:00',
+    seconds: 0,
   });
 
-  // Global state yang bisa diakses semua content components
+  const globalActivityRef = useRef(null);
+
+  // Simplified global state
   const [globalData, setGlobalData] = useState({
     // Data dari login
     selectedAction: selectedAction || 'SHIFT CHANGE',
@@ -65,44 +75,11 @@ const DashboardScreen = ({route, navigation}) => {
     hmAkhir: '',
     isHmAwalSet: false,
 
-    // Data dari berbagai content
-    delayData: {
-      activeCode: null,
-      activeName: '',
-      startTime: '',
-      endTime: '',
-      isActive: false,
-      reason: '',
-      duration: '00:00:00',
-    },
+    // Work data (still used)
     workData: {
       loads: 0,
       productivity: '0 bcm/h',
       hours: '0.00',
-    },
-    idleData: {
-      reason: '',
-      description: '',
-      startTime: '',
-      endTime: '',
-      isActive: false,
-      duration: '00:00:00',
-    },
-    mtData: {
-      type: '',
-      description: '',
-      status: '',
-      startTime: '',
-      endTime: '',
-      isActive: false,
-      duration: '00:00:00',
-    },
-
-    // Persistent data untuk timer states
-    persistentTimers: {
-      delay: {},
-      idle: {},
-      work: {},
     },
 
     // Dashboard info
@@ -123,11 +100,213 @@ const DashboardScreen = ({route, navigation}) => {
   const [showEndShiftModal, setShowEndShiftModal] = useState(false);
   const [hmAkhirShift, setHmAkhirShift] = useState('');
 
-  // Timer management for session duration
+  // Quick delay input
+  const [quickDelayCode, setQuickDelayCode] = useState('');
+
+  // ============ HISTORY FUNCTIONS ============
+
+  // Load history count on component mount
+  useEffect(() => {
+    loadHistoryCount();
+  }, [globalData.welcomeId]);
+
+  const loadHistoryCount = async () => {
+    try {
+      const count = await ActivityHistoryService.getHistoryCount(
+        globalData.welcomeId,
+      );
+      setHistoryCount(count);
+      console.log(`📊 History count loaded: ${count} activities`);
+    } catch (error) {
+      console.error('Failed to load history count:', error);
+    }
+  };
+
+  // Handle repeat activity from history modal
+  const handleRepeatActivity = async activity => {
+    try {
+      console.log(`🔄 Repeating activity: ${activity.activityName}`);
+
+      // Start the global activity
+      await startGlobalActivity(
+        activity.activityName,
+        activity.activityCode,
+        activity.sourceTab,
+      );
+
+      // Switch to the appropriate tab
+      setActiveTab(activity.sourceTab);
+
+      // Close history modal
+      setShowHistoryModal(false);
+
+      console.log(
+        `✅ Activity repeated and switched to ${activity.sourceTab} tab`,
+      );
+    } catch (error) {
+      console.error('Failed to repeat activity:', error);
+      Alert.alert('Error', 'Gagal mengulangi aktivitas');
+    }
+  };
+
+  // ============ GLOBAL ACTIVITY FUNCTIONS ============
+
+  const startGlobalActivity = async (activityName, activityCode, sourceTab) => {
+    console.log(
+      `🚀 Starting global activity: ${activityName} (${activityCode}) from ${sourceTab}`,
+    );
+
+    // Stop previous activity if exists
+    if (globalActivity.isActive) {
+      await stopGlobalActivity(true); // Auto-save previous
+    }
+
+    const startTime = new Date();
+
+    // Clear any existing interval
+    if (globalActivityRef.current) {
+      clearInterval(globalActivityRef.current);
+    }
+
+    // Set new global activity
+    const newActivity = {
+      isActive: true,
+      activityName,
+      activityCode,
+      sourceTab,
+      startTime,
+      duration: '00:00:00',
+      seconds: 0,
+    };
+
+    setGlobalActivity(newActivity);
+
+    // Start timer
+    globalActivityRef.current = setInterval(() => {
+      setGlobalActivity(prev => {
+        const newSeconds = prev.seconds + 1;
+        const hours = Math.floor(newSeconds / 3600);
+        const minutes = Math.floor((newSeconds % 3600) / 60);
+        const secs = newSeconds % 60;
+        const formattedTime = `${hours.toString().padStart(2, '0')}:${minutes
+          .toString()
+          .padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+        return {
+          ...prev,
+          seconds: newSeconds,
+          duration: formattedTime,
+        };
+      });
+    }, 1000);
+
+    console.log(`✅ Global activity started: ${activityName}`);
+  };
+
+  const stopGlobalActivity = async (autoSave = false) => {
+    if (!globalActivity.isActive) {
+      console.log('⚠️ No active global activity to stop');
+      return;
+    }
+
+    console.log(`🛑 Stopping global activity: ${globalActivity.activityName}`);
+
+    // Stop timer
+    if (globalActivityRef.current) {
+      clearInterval(globalActivityRef.current);
+    }
+
+    const endTime = new Date();
+    const activityToSave = {...globalActivity};
+
+    // Add to history if activity ran for at least 5 seconds
+    if (activityToSave.seconds >= 5) {
+      const newHistory = await ActivityHistoryService.addActivity(
+        globalData.welcomeId,
+        {
+          activityName: activityToSave.activityName,
+          activityCode: activityToSave.activityCode,
+          sourceTab: activityToSave.sourceTab,
+          startTime: activityToSave.startTime,
+          endTime: endTime,
+          duration: activityToSave.duration,
+          totalSeconds: activityToSave.seconds,
+        },
+      );
+
+      if (newHistory) {
+        setHistoryCount(newHistory.length);
+        console.log(
+          `📚 Activity added to history. New count: ${newHistory.length}`,
+        );
+      }
+    }
+
+    // Reset state
+    setGlobalActivity({
+      isActive: false,
+      activityName: '',
+      activityCode: '',
+      sourceTab: '',
+      startTime: null,
+      duration: '00:00:00',
+      seconds: 0,
+    });
+
+    // Auto-save to backend if needed
+    if (autoSave && globalData.documentNumber && activityToSave.startTime) {
+      try {
+        console.log(`💾 Auto-saving activity: ${activityToSave.activityName}`);
+
+        const activityData = {
+          activityName: activityToSave.activityName,
+          startTime: activityToSave.startTime,
+          endTime: endTime,
+          sessionNumber: globalData.documentNumber,
+        };
+
+        const response = await apiService.saveActivity(activityData);
+
+        if (response.success) {
+          console.log(
+            `✅ Activity ${activityToSave.activityName} auto-saved successfully`,
+          );
+        } else {
+          console.warn(`⚠️ Failed to auto-save activity:`, response.message);
+        }
+      } catch (error) {
+        console.error(`💥 Error auto-saving activity:`, error.message);
+      }
+    }
+
+    console.log(
+      `🏁 Global activity stopped: ${activityToSave.activityName} (Duration: ${activityToSave.duration})`,
+    );
+  };
+
+  // ============ HISTORY BUTTON COMPONENT ============
+
+  const renderHistoryButton = () => (
+    <TouchableOpacity
+      style={styles.historyAccessButton}
+      onPress={() => setShowHistoryModal(true)}
+      activeOpacity={0.7}>
+      <Text style={styles.historyAccessText}>📚</Text>
+      {historyCount > 0 && (
+        <View style={styles.historyBadge}>
+          <Text style={styles.historyBadgeText}>
+            {historyCount > 99 ? '99+' : historyCount}
+          </Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+
+  // ============ SESSION TIMER MANAGEMENT ============
+
   useEffect(() => {
     console.log('🕐 Initializing session timer...');
 
-    // Parse initial timer dari LoginScreen
     const parseTimer = timeString => {
       const parts = timeString.split(':');
       if (parts.length === 3) {
@@ -144,26 +323,25 @@ const DashboardScreen = ({route, navigation}) => {
     timerIntervalRef.current = setInterval(() => {
       timerSecondsRef.current += 1;
       const formattedTime = formatSessionTime(timerSecondsRef.current);
-
       setSessionTimer(formattedTime);
-
-      setGlobalData(prev => ({
-        ...prev,
-        currentTimer: formattedTime,
-      }));
     }, 1000);
-
-    console.log(`✅ Session timer started from: ${currentTimer}`);
 
     return () => {
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
-        console.log('🛑 Session timer stopped');
       }
     };
   }, []);
 
-  // Format timer function
+  // Cleanup global activity timer on unmount
+  useEffect(() => {
+    return () => {
+      if (globalActivityRef.current) {
+        clearInterval(globalActivityRef.current);
+      }
+    };
+  }, []);
+
   const formatSessionTime = totalSeconds => {
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -173,7 +351,7 @@ const DashboardScreen = ({route, navigation}) => {
       .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  // DateTime timer for real-time updates
+  // DateTime timer
   useEffect(() => {
     const updateDateTime = () => {
       const now = new Date();
@@ -199,32 +377,10 @@ const DashboardScreen = ({route, navigation}) => {
 
     updateDateTime();
     const interval = setInterval(updateDateTime, 1000);
-
     return () => clearInterval(interval);
   }, []);
 
-  // Save session data to AsyncStorage for offline access
-  useEffect(() => {
-    const saveSessionData = async () => {
-      try {
-        await AsyncStorage.setItem(
-          'current_session_data',
-          JSON.stringify({
-            ...globalData,
-            sessionData: sessionTimer,
-            timestamp: new Date().toISOString(),
-          }),
-        );
-      } catch (error) {
-        console.error('Failed to save session data:', error);
-      }
-    };
-
-    if (globalData.sessionId) {
-      saveSessionData();
-    }
-  }, [globalData, sessionTimer]);
-
+  // Simplified updateGlobalData
   const updateGlobalData = newData => {
     setGlobalData(prev => ({
       ...prev,
@@ -233,40 +389,48 @@ const DashboardScreen = ({route, navigation}) => {
     }));
   };
 
-  // NEW: Function to handle tab switching with content persistence
+  // ============ NAVIGATION & UI HANDLERS ============
+
+  // Tab navigation
   const handleTabNavigation = async tabName => {
     const newTab = tabName.toLowerCase();
-    const currentTab = activeTab;
+    console.log(`🔄 Switching to ${newTab} tab`);
+    setActiveTab(newTab);
+  };
 
-    console.log(`🔄 Switching from ${currentTab} to ${newTab}`);
-
-    // Step 1: Save current tab state if there's an active activity
-    if (currentTab === 'delay' && globalData.delayData.isActive) {
-      console.log('💾 Saving delay activity before tab switch');
-      // Trigger save from DelayContent
-      if (contentRefs.current.delay?.saveCurrentActivity) {
-        await contentRefs.current.delay.saveCurrentActivity();
-      }
-    } else if (currentTab === 'idle' && globalData.idleData.isActive) {
-      console.log('💾 Saving idle activity before tab switch');
-      // Trigger save from IdleContent
-      if (contentRefs.current.idle?.saveCurrentActivity) {
-        await contentRefs.current.idle.saveCurrentActivity();
-      }
+  // Quick delay functionality
+  const handleQuickDelayStart = async () => {
+    if (!quickDelayCode || quickDelayCode.trim() === '') {
+      Alert.alert('Error', 'Silakan masukkan kode delay');
+      return;
     }
 
-    // Step 2: Update persistent timers untuk tab yang ditinggalkan
-    const updatedPersistentTimers = {
-      ...globalData.persistentTimers,
-      [currentTab]: contentRefs.current[currentTab]?.getTimersState?.() || {},
-    };
+    const delayActivities = [
+      {code: '001', name: 'DAILY FUEL-PM'},
+      {code: '004', name: 'RELOCATE'},
+      {code: '005', name: 'ENG. DELAYS'},
+      {code: '006', name: 'OPER SHOVEL WAIT ON TRUCKS'},
+      {code: '007', name: 'WAIT ON OTHER EQUIP'},
+    ];
 
-    updateGlobalData({
-      persistentTimers: updatedPersistentTimers,
-    });
+    const activity = delayActivities.find(act => act.code === quickDelayCode);
 
-    // Step 3: Switch to new tab
-    setActiveTab(newTab);
+    if (!activity) {
+      Alert.alert(
+        'Error',
+        'Kode delay tidak valid. Gunakan: 001, 004, 005, 006, 007',
+      );
+      return;
+    }
+
+    // Start the delay activity
+    await startGlobalActivity(activity.name, activity.code, 'delay');
+
+    // Switch to delay tab
+    setActiveTab('delay');
+
+    // Clear input
+    setQuickDelayCode('');
   };
 
   const handleHmAwalSubmit = async () => {
@@ -319,10 +483,7 @@ const DashboardScreen = ({route, navigation}) => {
         'Session Creation Failed',
         `${error.message}\n\nContinue in offline mode?`,
         [
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
+          {text: 'Cancel', style: 'cancel'},
           {
             text: 'Continue Offline',
             onPress: () => {
@@ -382,23 +543,12 @@ const DashboardScreen = ({route, navigation}) => {
     setIsEndingShift(true);
 
     try {
-      console.log('🔄 Ending shift with HM Akhir:', hmValue);
-
-      // Save any active activities before ending shift
-      const currentTab = activeTab;
-      if (currentTab === 'delay' && globalData.delayData.isActive) {
-        if (contentRefs.current.delay?.saveCurrentActivity) {
-          await contentRefs.current.delay.saveCurrentActivity();
-        }
-      } else if (currentTab === 'idle' && globalData.idleData.isActive) {
-        if (contentRefs.current.idle?.saveCurrentActivity) {
-          await contentRefs.current.idle.saveCurrentActivity();
-        }
+      // Stop any active global activity before ending shift
+      if (globalActivity.isActive) {
+        await stopGlobalActivity(true);
       }
 
       if (globalData.sessionId && globalData.documentNumber) {
-        console.log('💾 Ending session with backend...');
-
         const response = await apiService.endSession(
           globalData.sessionId,
           hmValue,
@@ -407,34 +557,11 @@ const DashboardScreen = ({route, navigation}) => {
 
         if (response.success) {
           console.log('✅ Session ended successfully with backend');
-        } else {
-          console.warn(
-            '⚠️ Failed to end session with backend:',
-            response.message,
-          );
         }
       }
 
-      const sessionDuration = globalData.currentTimer;
+      const sessionDuration = sessionTimer;
       const hmDifference = hmValue - hmAwalValue;
-
-      const finalSessionData = {
-        ...globalData,
-        hmAkhir: hmValue,
-        endTime: new Date().toISOString(),
-        status: 'SHIFT_ENDED',
-        summary: {
-          duration: sessionDuration,
-          hmDifference: hmDifference,
-          totalLoads: globalData.workData.loads,
-          productivity: globalData.workData.productivity,
-        },
-      };
-
-      await AsyncStorage.setItem(
-        'last_session_data',
-        JSON.stringify(finalSessionData),
-      );
 
       setShowEndShiftModal(false);
 
@@ -450,8 +577,8 @@ const DashboardScreen = ({route, navigation}) => {
           `📏 HM Akhir: ${hmValue}\n` +
           `📊 Total HM: ${hmDifference} HM\n` +
           `📦 Total Loads: ${globalData.workData.loads}\n` +
-          `🏆 Productivity: ${globalData.workData.productivity}\n\n` +
-          `Terima kasih atas kerja keras Anda! 💪`,
+          `🏆 Productivity: ${globalData.workData.productivity}\n` +
+          `📚 Activities Logged: ${historyCount}`,
         [
           {
             text: 'Selesai',
@@ -461,39 +588,7 @@ const DashboardScreen = ({route, navigation}) => {
       );
     } catch (error) {
       console.error('💥 Error ending shift:', error);
-
-      Alert.alert(
-        'Error',
-        `Gagal mengakhiri shift: ${error.message}\n\nLanjut offline?`,
-        [
-          {
-            text: 'Coba Lagi',
-            style: 'cancel',
-          },
-          {
-            text: 'Lanjut Offline',
-            onPress: async () => {
-              try {
-                const offlineSessionData = {
-                  ...globalData,
-                  hmAkhir: hmValue,
-                  endTime: new Date().toISOString(),
-                  status: 'SHIFT_ENDED_OFFLINE',
-                };
-                await AsyncStorage.setItem(
-                  'last_session_data',
-                  JSON.stringify(offlineSessionData),
-                );
-              } catch (saveError) {
-                console.error('Failed to save offline data:', saveError);
-              }
-
-              setShowEndShiftModal(false);
-              navigation.navigate('Login');
-            },
-          },
-        ],
-      );
+      Alert.alert('Error', `Gagal mengakhiri shift: ${error.message}`);
     } finally {
       setIsEndingShift(false);
     }
@@ -528,54 +623,31 @@ const DashboardScreen = ({route, navigation}) => {
     }
   };
 
-  // Render content berdasarkan active tab dengan ref support
+  // Quick fix: Pass functions inside globalData for compatibility
   const renderContent = () => {
     const contentProps = {
-      globalData,
+      globalData: {
+        ...globalData,
+        globalActivity,
+        startGlobalActivity, // Add function to globalData for compatibility
+        stopGlobalActivity, // Add function to globalData for compatibility
+      },
       updateGlobalData,
-      setActiveTab: handleTabNavigation, // Use new handler
+      setActiveTab: handleTabNavigation,
       apiService,
     };
 
     switch (activeTab) {
       case 'work':
-        return (
-          <WorkContent
-            {...contentProps}
-            ref={ref => {
-              contentRefs.current.work = ref;
-            }}
-          />
-        );
+        return <WorkContent {...contentProps} />;
       case 'delay':
-        return (
-          <DelayContent
-            {...contentProps}
-            ref={ref => {
-              contentRefs.current.delay = ref;
-            }}
-          />
-        );
+        return <DelayContent {...contentProps} />;
       case 'idle':
-        return (
-          <IdleContent
-            {...contentProps}
-            ref={ref => {
-              contentRefs.current.idle = ref;
-            }}
-          />
-        );
+        return <IdleContent {...contentProps} />;
       case 'mt':
         return <MTContent {...contentProps} navigation={navigation} />;
       default:
-        return (
-          <WorkContent
-            {...contentProps}
-            ref={ref => {
-              contentRefs.current.work = ref;
-            }}
-          />
-        );
+        return <WorkContent {...contentProps} />;
     }
   };
 
@@ -653,7 +725,7 @@ const DashboardScreen = ({route, navigation}) => {
         </View>
       </View>
 
-      {/* Modal popup blocking untuk input Hm Awal (WAJIB DIISI) */}
+      {/* Modal popup blocking untuk input Hm Awal */}
       <Modal
         visible={showHmAwalModal && !globalData.isHmAwalSet}
         transparent={true}
@@ -732,15 +804,14 @@ const DashboardScreen = ({route, navigation}) => {
               <Text style={styles.summaryText}>
                 HM Awal: {globalData.hmAwal}
               </Text>
-              <Text style={styles.summaryText}>
-                Durasi: {globalData.currentTimer}
-              </Text>
+              <Text style={styles.summaryText}>Durasi: {sessionTimer}</Text>
               <Text style={styles.summaryText}>
                 Total Loads: {globalData.workData.loads}
               </Text>
               <Text style={styles.summaryText}>
                 Productivity: {globalData.workData.productivity}
               </Text>
+              <Text style={styles.summaryText}>Activities: {historyCount}</Text>
             </View>
 
             <TextInput
@@ -782,27 +853,68 @@ const DashboardScreen = ({route, navigation}) => {
         </View>
       </Modal>
 
-      {/* Dynamic Main Content Area - based on active tab */}
+      {/* Activity History Modal */}
+      <ActivityHistoryModal
+        visible={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+        operatorId={globalData.welcomeId}
+        operatorName={globalData.welcomeName}
+        onRepeatActivity={handleRepeatActivity}
+      />
+
+      {/* Dynamic Main Content Area */}
       <View style={styles.contentArea}>{renderContent()}</View>
 
-      {/* Global delay code input - always visible above bottom navigation */}
+      {/* Global delay code input dengan history button */}
       <View style={styles.globalDelayInputContainer}>
-        <Text style={styles.delayInputLabel}>Masukkan Delay Kode:</Text>
-        <View style={styles.delayInputRow}>
-          <TextInput
-            style={styles.delayCodeInput}
-            placeholder="001, 004, 005, 006, 007"
-            placeholderTextColor="#999"
-            keyboardType="numeric"
-            maxLength={3}
-          />
-          <TouchableOpacity style={styles.delayStartButton}>
-            <Text style={styles.delayStartButtonText}>START</Text>
-          </TouchableOpacity>
+        {/* Row 1: Delay Code Input dengan History Button */}
+        <View style={styles.delayInputSection}>
+          <View style={styles.delayInputHeader}>
+            <Text style={styles.delayInputLabel}>Quick Delay:</Text>
+            {renderHistoryButton()}
+          </View>
+          <View style={styles.delayInputRow}>
+            <TextInput
+              style={styles.delayCodeInput}
+              placeholder="001, 004, 005, 006, 007"
+              placeholderTextColor="#999"
+              keyboardType="numeric"
+              maxLength={3}
+              value={quickDelayCode}
+              onChangeText={setQuickDelayCode}
+            />
+            <TouchableOpacity
+              style={styles.delayStartButton}
+              onPress={handleQuickDelayStart}>
+              <Text style={styles.delayStartButtonText}>START</Text>
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {/* Row 2: Global Activity Display */}
+        {globalActivity.isActive && (
+          <View style={styles.globalTimerSection}>
+            <View style={styles.globalTimerDisplay}>
+              <View style={styles.globalTimerContent}>
+                <Text style={styles.globalTimerLabel}>🟢 Active:</Text>
+                <Text style={styles.globalTimerActivity} numberOfLines={1}>
+                  {globalActivity.activityName}
+                </Text>
+                <Text style={styles.globalTimerTime}>
+                  {globalActivity.duration}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.globalTimerStopButton}
+                onPress={() => stopGlobalActivity(true)}>
+                <Text style={styles.globalTimerStopText}>STOP</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </View>
 
-      {/* Bottom Navigation Section - Always visible */}
+      {/* Bottom Navigation Section */}
       <View style={styles.bottomNavigation}>
         <TouchableOpacity
           style={[
@@ -886,7 +998,6 @@ const DashboardScreen = ({route, navigation}) => {
   );
 };
 
-// Styles tetap sama seperti sebelumnya
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1102,26 +1213,64 @@ const styles = StyleSheet.create({
   contentArea: {
     flex: 1,
   },
-  // Global delay input
+  // Global delay input dengan history button
   globalDelayInputContainer: {
     backgroundColor: 'white',
     paddingHorizontal: 15,
     paddingVertical: 10,
     borderTopWidth: 1,
     borderTopColor: '#ddd',
+    minHeight: 60,
+  },
+  delayInputSection: {
+    marginBottom: 5,
+  },
+  delayInputHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
+    marginBottom: 6,
   },
   delayInputLabel: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#333',
-    marginRight: 10,
+  },
+  // History Button Styles
+  historyAccessButton: {
+    position: 'relative',
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#E3F2FD',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  historyAccessText: {
+    fontSize: 16,
+  },
+  historyBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#F44336',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  historyBadgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   delayInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   delayCodeInput: {
     borderWidth: 1,
@@ -1133,7 +1282,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fafafa',
     marginRight: 8,
     textAlign: 'center',
-    width: 120,
+    width: 150,
   },
   delayStartButton: {
     backgroundColor: '#2196F3',
@@ -1144,6 +1293,58 @@ const styles = StyleSheet.create({
   delayStartButtonText: {
     color: 'white',
     fontSize: 12,
+    fontWeight: 'bold',
+  },
+  globalTimerSection: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  globalTimerDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#E8F5E8',
+    padding: 10,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50',
+  },
+  globalTimerContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  globalTimerLabel: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#2E7D32',
+    marginRight: 6,
+  },
+  globalTimerActivity: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#2E7D32',
+    marginRight: 6,
+    flex: 1,
+  },
+  globalTimerTime: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#1B5E20',
+    fontFamily: 'monospace',
+    marginRight: 6,
+  },
+  globalTimerStopButton: {
+    backgroundColor: '#F44336',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 4,
+  },
+  globalTimerStopText: {
+    color: 'white',
+    fontSize: 9,
     fontWeight: 'bold',
   },
   // Bottom navigation

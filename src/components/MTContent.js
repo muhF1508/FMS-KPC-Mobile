@@ -51,14 +51,12 @@ const MTContent = ({
       return;
     }
 
-    // Validate HM format
     const hmValue = parseInt(hmAkhir);
     if (isNaN(hmValue) || hmValue < 0 || hmValue > 999999) {
       Alert.alert('Error', 'HM Akhir harus berupa angka valid (0-999999)');
       return;
     }
 
-    // Validate HM Akhir should be greater than HM Awal
     const hmAwalValue = parseInt(globalData.hmAwal);
     if (hmValue <= hmAwalValue) {
       Alert.alert(
@@ -71,6 +69,11 @@ const MTContent = ({
     setIsLoading(true);
 
     try {
+      // Stop any active global activity before ending shift
+      if (globalData.globalActivity?.isActive) {
+        await globalData.stopGlobalActivity(true);
+      }
+
       // Save maintenance activity to backend if online
       if (globalData.documentNumber && apiService) {
         console.log(`💾 Saving ${selectedMaintenanceType.name} to backend...`);
@@ -133,7 +136,7 @@ const MTContent = ({
       setShowHmAkhirModal(false);
 
       // Calculate session summary
-      const sessionDuration = calculateSessionDuration();
+      const sessionDuration = globalData.currentTimer || '00:00:00';
       const hmDifference = hmValue - hmAwalValue;
 
       Alert.alert(
@@ -151,14 +154,12 @@ const MTContent = ({
           {
             text: 'Lihat Report',
             onPress: () => {
-              // Navigate to report screen or show detailed summary
               generateSessionReport();
             },
           },
           {
             text: 'Selesai',
             onPress: () => {
-              // Reset form and navigate back to Login
               resetFormAndNavigate();
             },
             style: 'default',
@@ -179,7 +180,6 @@ const MTContent = ({
           {
             text: 'Lanjut Offline',
             onPress: () => {
-              // Complete offline
               setShowHmAkhirModal(false);
               resetFormAndNavigate();
             },
@@ -191,14 +191,10 @@ const MTContent = ({
     }
   };
 
-  const calculateSessionDuration = () => {
-    // Simple duration calculation based on current timer
-    return globalData.currentTimer || '00:00:00';
-  };
-
   const generateSessionReport = async () => {
     if (!globalData.documentNumber || !apiService) {
       Alert.alert('Info', 'Report hanya tersedia dalam mode online');
+      resetFormAndNavigate();
       return;
     }
 
@@ -243,11 +239,8 @@ const MTContent = ({
   };
 
   const resetFormAndNavigate = () => {
-    // Reset form
     setHmAkhir('');
     setSelectedMaintenanceType('');
-
-    // Navigate back to Login
     navigation.navigate('Login');
   };
 
@@ -288,6 +281,26 @@ const MTContent = ({
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="small" color="#2196F3" />
           <Text style={styles.loadingText}>Processing...</Text>
+        </View>
+      )}
+
+      {/* Global Activity Status */}
+      {globalData.globalActivity?.isActive && (
+        <View style={styles.globalActivityContainer}>
+          <Text style={styles.globalActivityTitle}>
+            Aktivitas Sedang Berjalan:
+          </Text>
+          <Text style={styles.globalActivityText}>
+            ⚡ {globalData.globalActivity.activityName} (
+            {globalData.globalActivity.activityCode})
+          </Text>
+          <Text style={styles.globalActivityTime}>
+            Durasi: {globalData.globalActivity.duration} | Tab:{' '}
+            {globalData.globalActivity.sourceTab.toUpperCase()}
+          </Text>
+          <Text style={styles.globalActivityWarning}>
+            ⚠️ Aktivitas ini akan dihentikan otomatis saat memilih maintenance
+          </Text>
         </View>
       )}
 
@@ -392,6 +405,12 @@ const MTContent = ({
               <Text style={styles.hmInfoText}>
                 Durasi Session: {globalData.currentTimer}
               </Text>
+              {globalData.globalActivity?.isActive && (
+                <Text style={styles.hmInfoWarning}>
+                  ⚠️ Aktivitas {globalData.globalActivity.activityName} akan
+                  dihentikan
+                </Text>
+              )}
             </View>
 
             <TextInput
@@ -491,6 +510,36 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1976D2',
     fontWeight: 'bold',
+  },
+  globalActivityContainer: {
+    backgroundColor: '#FFF3E0',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+  },
+  globalActivityTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#E65100',
+    marginBottom: 5,
+  },
+  globalActivityText: {
+    fontSize: 16,
+    color: '#EF6C00',
+    fontWeight: 'bold',
+  },
+  globalActivityTime: {
+    fontSize: 14,
+    color: '#FF8F00',
+    marginTop: 5,
+  },
+  globalActivityWarning: {
+    fontSize: 12,
+    color: '#E65100',
+    fontStyle: 'italic',
+    marginTop: 8,
   },
   infoContainer: {
     backgroundColor: '#E3F2FD',
@@ -640,6 +689,14 @@ const styles = StyleSheet.create({
     color: '#2E7D32',
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  hmInfoWarning: {
+    fontSize: 12,
+    color: '#FF6F00',
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginTop: 5,
+    fontStyle: 'italic',
   },
   modalInput: {
     width: '100%',
