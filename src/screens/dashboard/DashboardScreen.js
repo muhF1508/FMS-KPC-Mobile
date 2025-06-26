@@ -75,7 +75,7 @@ const DashboardScreen = ({route, navigation}) => {
     hmAkhir: '',
     isHmAwalSet: false,
 
-    // Work data (still used)
+    // Work data
     workData: {
       loads: 0,
       productivity: '0 bcm/h',
@@ -95,17 +95,13 @@ const DashboardScreen = ({route, navigation}) => {
     time: '',
   });
 
-  // State untuk menampilkan modal popup Hm Awal dan Hm Akhir
+  // Modal states
   const [showHmAwalModal, setShowHmAwalModal] = useState(true);
   const [showEndShiftModal, setShowEndShiftModal] = useState(false);
   const [hmAkhirShift, setHmAkhirShift] = useState('');
 
-  // Quick delay input
-  const [quickDelayCode, setQuickDelayCode] = useState('');
-
   // ============ HISTORY FUNCTIONS ============
 
-  // Load history count on component mount
   useEffect(() => {
     loadHistoryCount();
   }, [globalData.welcomeId]);
@@ -122,22 +118,17 @@ const DashboardScreen = ({route, navigation}) => {
     }
   };
 
-  // Handle repeat activity from history modal
   const handleRepeatActivity = async activity => {
     try {
       console.log(`🔄 Repeating activity: ${activity.activityName}`);
 
-      // Start the global activity
       await startGlobalActivity(
         activity.activityName,
         activity.activityCode,
         activity.sourceTab,
       );
 
-      // Switch to the appropriate tab
       setActiveTab(activity.sourceTab);
-
-      // Close history modal
       setShowHistoryModal(false);
 
       console.log(
@@ -156,19 +147,16 @@ const DashboardScreen = ({route, navigation}) => {
       `🚀 Starting global activity: ${activityName} (${activityCode}) from ${sourceTab}`,
     );
 
-    // Stop previous activity if exists
     if (globalActivity.isActive) {
-      await stopGlobalActivity(true); // Auto-save previous
+      await stopGlobalActivity(true);
     }
 
     const startTime = new Date();
 
-    // Clear any existing interval
     if (globalActivityRef.current) {
       clearInterval(globalActivityRef.current);
     }
 
-    // Set new global activity
     const newActivity = {
       isActive: true,
       activityName,
@@ -181,7 +169,6 @@ const DashboardScreen = ({route, navigation}) => {
 
     setGlobalActivity(newActivity);
 
-    // Start timer
     globalActivityRef.current = setInterval(() => {
       setGlobalActivity(prev => {
         const newSeconds = prev.seconds + 1;
@@ -211,7 +198,6 @@ const DashboardScreen = ({route, navigation}) => {
 
     console.log(`🛑 Stopping global activity: ${globalActivity.activityName}`);
 
-    // Stop timer
     if (globalActivityRef.current) {
       clearInterval(globalActivityRef.current);
     }
@@ -219,7 +205,6 @@ const DashboardScreen = ({route, navigation}) => {
     const endTime = new Date();
     const activityToSave = {...globalActivity};
 
-    // Add to history if activity ran for at least 5 seconds
     if (activityToSave.seconds >= 5) {
       const newHistory = await ActivityHistoryService.addActivity(
         globalData.welcomeId,
@@ -242,7 +227,6 @@ const DashboardScreen = ({route, navigation}) => {
       }
     }
 
-    // Reset state
     setGlobalActivity({
       isActive: false,
       activityName: '',
@@ -253,7 +237,6 @@ const DashboardScreen = ({route, navigation}) => {
       seconds: 0,
     });
 
-    // Auto-save to backend if needed
     if (autoSave && globalData.documentNumber && activityToSave.startTime) {
       try {
         console.log(`💾 Auto-saving activity: ${activityToSave.activityName}`);
@@ -284,25 +267,7 @@ const DashboardScreen = ({route, navigation}) => {
     );
   };
 
-  // ============ HISTORY BUTTON COMPONENT ============
-
-  const renderHistoryButton = () => (
-    <TouchableOpacity
-      style={styles.historyAccessButton}
-      onPress={() => setShowHistoryModal(true)}
-      activeOpacity={0.7}>
-      <Text style={styles.historyAccessText}>📚</Text>
-      {historyCount > 0 && (
-        <View style={styles.historyBadge}>
-          <Text style={styles.historyBadgeText}>
-            {historyCount > 99 ? '99+' : historyCount}
-          </Text>
-        </View>
-      )}
-    </TouchableOpacity>
-  );
-
-  // ============ SESSION TIMER MANAGEMENT ============
+  // ============ TIMER MANAGEMENT ============
 
   useEffect(() => {
     console.log('🕐 Initializing session timer...');
@@ -333,7 +298,6 @@ const DashboardScreen = ({route, navigation}) => {
     };
   }, []);
 
-  // Cleanup global activity timer on unmount
   useEffect(() => {
     return () => {
       if (globalActivityRef.current) {
@@ -380,7 +344,6 @@ const DashboardScreen = ({route, navigation}) => {
     return () => clearInterval(interval);
   }, []);
 
-  // Simplified updateGlobalData
   const updateGlobalData = newData => {
     setGlobalData(prev => ({
       ...prev,
@@ -389,48 +352,12 @@ const DashboardScreen = ({route, navigation}) => {
     }));
   };
 
-  // ============ NAVIGATION & UI HANDLERS ============
+  // ============ HANDLERS ============
 
-  // Tab navigation
   const handleTabNavigation = async tabName => {
     const newTab = tabName.toLowerCase();
     console.log(`🔄 Switching to ${newTab} tab`);
     setActiveTab(newTab);
-  };
-
-  // Quick delay functionality
-  const handleQuickDelayStart = async () => {
-    if (!quickDelayCode || quickDelayCode.trim() === '') {
-      Alert.alert('Error', 'Silakan masukkan kode delay');
-      return;
-    }
-
-    const delayActivities = [
-      {code: '001', name: 'DAILY FUEL-PM'},
-      {code: '004', name: 'RELOCATE'},
-      {code: '005', name: 'ENG. DELAYS'},
-      {code: '006', name: 'OPER SHOVEL WAIT ON TRUCKS'},
-      {code: '007', name: 'WAIT ON OTHER EQUIP'},
-    ];
-
-    const activity = delayActivities.find(act => act.code === quickDelayCode);
-
-    if (!activity) {
-      Alert.alert(
-        'Error',
-        'Kode delay tidak valid. Gunakan: 001, 004, 005, 006, 007',
-      );
-      return;
-    }
-
-    // Start the delay activity
-    await startGlobalActivity(activity.name, activity.code, 'delay');
-
-    // Switch to delay tab
-    setActiveTab('delay');
-
-    // Clear input
-    setQuickDelayCode('');
   };
 
   const handleHmAwalSubmit = async () => {
@@ -543,7 +470,6 @@ const DashboardScreen = ({route, navigation}) => {
     setIsEndingShift(true);
 
     try {
-      // Stop any active global activity before ending shift
       if (globalActivity.isActive) {
         await stopGlobalActivity(true);
       }
@@ -623,14 +549,13 @@ const DashboardScreen = ({route, navigation}) => {
     }
   };
 
-  // Quick fix: Pass functions inside globalData for compatibility
   const renderContent = () => {
     const contentProps = {
       globalData: {
         ...globalData,
         globalActivity,
-        startGlobalActivity, // Add function to globalData for compatibility
-        stopGlobalActivity, // Add function to globalData for compatibility
+        startGlobalActivity,
+        stopGlobalActivity,
       },
       updateGlobalData,
       setActiveTab: handleTabNavigation,
@@ -651,7 +576,6 @@ const DashboardScreen = ({route, navigation}) => {
     }
   };
 
-  // Get active tab title for status
   const getActiveTabStatus = () => {
     if (activeTab === 'work') return 'WORK';
     return activeTab.toUpperCase();
@@ -659,9 +583,9 @@ const DashboardScreen = ({route, navigation}) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Layout Header Section */}
+      {/* Header Section */}
       <View style={styles.headerSection}>
-        {/* Baris atas - Welcome/ID, productivity, status */}
+        {/* Top Row */}
         <View style={styles.topRow}>
           <View style={styles.leftColumn}>
             <Text style={styles.welcomeLabel}>Welcome :</Text>
@@ -688,7 +612,7 @@ const DashboardScreen = ({route, navigation}) => {
           </View>
         </View>
 
-        {/* Baris bawah - Unit/Hm Awal, Load/Hours/Date, Timer */}
+        {/* Bottom Row */}
         <View style={styles.bottomRow}>
           <View style={styles.leftColumn}>
             <Text style={styles.infoText}>
@@ -725,7 +649,7 @@ const DashboardScreen = ({route, navigation}) => {
         </View>
       </View>
 
-      {/* Modal popup blocking untuk input Hm Awal */}
+      {/* HM Awal Modal */}
       <Modal
         visible={showHmAwalModal && !globalData.isHmAwalSet}
         transparent={true}
@@ -779,7 +703,7 @@ const DashboardScreen = ({route, navigation}) => {
         </View>
       </Modal>
 
-      {/* Modal HM Akhir untuk End Shift */}
+      {/* End Shift Modal */}
       <Modal
         visible={showEndShiftModal}
         transparent={true}
@@ -862,59 +786,45 @@ const DashboardScreen = ({route, navigation}) => {
         onRepeatActivity={handleRepeatActivity}
       />
 
-      {/* Dynamic Main Content Area */}
+      {/* Main Content Area */}
       <View style={styles.contentArea}>{renderContent()}</View>
 
-      {/* Global delay code input dengan history button */}
-      <View style={styles.globalDelayInputContainer}>
-        {/* Row 1: Delay Code Input dengan History Button */}
-        <View style={styles.delayInputSection}>
-          <View style={styles.delayInputHeader}>
-            <Text style={styles.delayInputLabel}>Quick Delay:</Text>
-            {renderHistoryButton()}
+      {/* Global Activity Banner (when active) */}
+      {globalActivity.isActive && (
+        <View style={styles.globalActivityBanner}>
+          <View style={styles.globalActivityContent}>
+            <Text style={styles.globalActivityLabel}>🟢 Active:</Text>
+            <Text style={styles.globalActivityText} numberOfLines={1}>
+              {globalActivity.activityName}
+            </Text>
+            <Text style={styles.globalActivityTime}>
+              {globalActivity.duration}
+            </Text>
           </View>
-          <View style={styles.delayInputRow}>
-            <TextInput
-              style={styles.delayCodeInput}
-              placeholder="001, 004, 005, 006, 007"
-              placeholderTextColor="#999"
-              keyboardType="numeric"
-              maxLength={3}
-              value={quickDelayCode}
-              onChangeText={setQuickDelayCode}
-            />
-            <TouchableOpacity
-              style={styles.delayStartButton}
-              onPress={handleQuickDelayStart}>
-              <Text style={styles.delayStartButtonText}>START</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={styles.globalActivityStopButton}
+            onPress={() => stopGlobalActivity(true)}>
+            <Text style={styles.globalActivityStopText}>STOP</Text>
+          </TouchableOpacity>
         </View>
+      )}
 
-        {/* Row 2: Global Activity Display */}
-        {globalActivity.isActive && (
-          <View style={styles.globalTimerSection}>
-            <View style={styles.globalTimerDisplay}>
-              <View style={styles.globalTimerContent}>
-                <Text style={styles.globalTimerLabel}>🟢 Active:</Text>
-                <Text style={styles.globalTimerActivity} numberOfLines={1}>
-                  {globalActivity.activityName}
-                </Text>
-                <Text style={styles.globalTimerTime}>
-                  {globalActivity.duration}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.globalTimerStopButton}
-                onPress={() => stopGlobalActivity(true)}>
-                <Text style={styles.globalTimerStopText}>STOP</Text>
-              </TouchableOpacity>
-            </View>
+      {/* Floating Action Button for History */}
+      <TouchableOpacity
+        style={styles.fabHistory}
+        onPress={() => setShowHistoryModal(true)}
+        activeOpacity={0.8}>
+        <Text style={styles.fabIcon}>📚</Text>
+        {historyCount > 0 && (
+          <View style={styles.fabBadge}>
+            <Text style={styles.fabBadgeText}>
+              {historyCount > 99 ? '99+' : historyCount}
+            </Text>
           </View>
         )}
-      </View>
+      </TouchableOpacity>
 
-      {/* Bottom Navigation Section */}
+      {/* Bottom Navigation */}
       <View style={styles.bottomNavigation}>
         <TouchableOpacity
           style={[
@@ -1213,138 +1123,107 @@ const styles = StyleSheet.create({
   contentArea: {
     flex: 1,
   },
-  // Global delay input dengan history button
-  globalDelayInputContainer: {
-    backgroundColor: 'white',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
-    minHeight: 60,
-  },
-  delayInputSection: {
-    marginBottom: 5,
-  },
-  delayInputHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  delayInputLabel: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  // History Button Styles
-  historyAccessButton: {
-    position: 'relative',
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#E3F2FD',
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  historyAccessText: {
-    fontSize: 16,
-  },
-  historyBadge: {
+  // Floating Action Button untuk History
+  fabHistory: {
     position: 'absolute',
-    top: -2,
-    right: -2,
-    backgroundColor: '#F44336',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  historyBadgeText: {
-    color: 'white',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  delayInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  delayCodeInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 14,
-    backgroundColor: '#fafafa',
-    marginRight: 8,
-    textAlign: 'center',
-    width: 150,
-  },
-  delayStartButton: {
+    bottom: 90,
+    right: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: '#2196F3',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 8,
+    zIndex: 999,
   },
-  delayStartButtonText: {
+  fabIcon: {
+    fontSize: 24,
+    color: 'white',
+  },
+  fabBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: '#F44336',
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'white',
+  },
+  fabBadgeText: {
     color: 'white',
     fontSize: 12,
     fontWeight: 'bold',
   },
-  globalTimerSection: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  globalTimerDisplay: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  // Global Activity Banner (when active)
+  globalActivityBanner: {
+    position: 'absolute',
+    bottom: 95, // Same level
+    left: 15,
+    right: 90,
     backgroundColor: '#E8F5E8',
-    padding: 10,
+    padding: 12,
     borderRadius: 8,
     borderLeftWidth: 4,
     borderLeftColor: '#4CAF50',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 998,
   },
-  globalTimerContent: {
+  globalActivityContent: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  globalTimerLabel: {
-    fontSize: 11,
+  globalActivityLabel: {
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#2E7D32',
-    marginRight: 6,
+    marginRight: 8,
   },
-  globalTimerActivity: {
-    fontSize: 10,
+  globalActivityText: {
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#2E7D32',
-    marginRight: 6,
+    marginRight: 8,
     flex: 1,
   },
-  globalTimerTime: {
-    fontSize: 12,
+  globalActivityTime: {
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#1B5E20',
     fontFamily: 'monospace',
-    marginRight: 6,
+    marginRight: 8,
   },
-  globalTimerStopButton: {
+  globalActivityStopButton: {
     backgroundColor: '#F44336',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 4,
   },
-  globalTimerStopText: {
+  globalActivityStopText: {
     color: 'white',
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: 'bold',
   },
   // Bottom navigation

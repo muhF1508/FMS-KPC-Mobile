@@ -194,8 +194,9 @@ const ActivityHistoryModal = ({
     return (
       <Modal
         visible={visible}
-        transparent
+        transparent={true}
         animationType="slide"
+        statusBarTranslucent={true}
         onRequestClose={onClose}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -212,8 +213,9 @@ const ActivityHistoryModal = ({
   return (
     <Modal
       visible={visible}
-      transparent
+      transparent={true}
       animationType="slide"
+      statusBarTranslucent={true}
       onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
@@ -335,7 +337,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '85%',
+    maxHeight: '90%',
     paddingTop: 20,
   },
   // Loading
