@@ -8,6 +8,7 @@ import {
   FlatList,
   Alert,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import ActivityHistoryService from '../services/ActivityHistoryService';
 
@@ -138,45 +139,68 @@ const ActivityHistoryModal = ({
     return colors[category] || '#2196F3';
   };
 
-  const renderActivityItem = ({item, index}) => (
-    <TouchableOpacity
-      style={styles.historyItem}
-      onPress={() => handleRepeatActivity(item)}
-      activeOpacity={0.7}>
-      <View
-        style={[
-          styles.activityIndicator,
-          {backgroundColor: getCategoryColor(item.sourceTab)},
-        ]}
-      />
+  const renderActivityItem = ({item, index}) => {
+    const formatTimeRange = (startTime, endTime) => {
+      const start = new Date(startTime);
+      const end = new Date(endTime);
 
-      <View style={styles.activityContent}>
-        <View style={styles.activityHeader}>
-          <Text style={styles.activityName} numberOfLines={1}>
-            {item.activityName}
-          </Text>
+      const startFormatted = start.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      const endFormatted = end.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      return `${startFormatted} → ${endFormatted} WITA`;
+    };
+
+    return (
+      <TouchableOpacity
+        style={styles.historyItem}
+        onPress={() => handleRepeatActivity(item)}
+        activeOpacity={0.7}>
+        <View
+          style={[
+            styles.activityIndicator,
+            {backgroundColor: getCategoryColor(item.sourceTab)},
+          ]}
+        />
+
+        <View style={styles.activityContent}>
+          <View style={styles.activityHeader}>
+            <Text style={styles.activityName} numberOfLines={1}>
+              {item.activityName}
+            </Text>
+          </View>
+
+          <View style={styles.activityDetails}>
+            <Text style={styles.activityCode}>{item.activityCode}</Text>
+            <Text style={styles.activityTab}>
+              {item.sourceTab.toUpperCase()}
+            </Text>
+            <Text style={styles.activityTime}>
+              {item.startTime && item.endTime
+                ? formatTimeRange(item.startTime, item.endTime)
+                : new Date(item.timestamp).toLocaleTimeString('id-ID', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  }) + ' WITA'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.rightSection}>
           <Text style={styles.activityDuration}>{item.duration}</Text>
+          <View style={styles.repeatButton}>
+            <Text style={styles.repeatIcon}>🔄</Text>
+          </View>
         </View>
-
-        <View style={styles.activityDetails}>
-          <Text style={styles.activityCode}>{item.activityCode}</Text>
-          <Text style={styles.activityTab}>{item.sourceTab.toUpperCase()}</Text>
-          <Text style={styles.activityTime}>
-            {new Date(item.timestamp).toLocaleTimeString('id-ID', {
-              hour: '2-digit',
-              minute: '2-digit',
-              timeZone: 'Asia/Makassar',
-            })}{' '}
-            WITA
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.repeatButton}>
-        <Text style={styles.repeatIcon}>🔄</Text>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
@@ -194,7 +218,7 @@ const ActivityHistoryModal = ({
     return (
       <Modal
         visible={visible}
-        transparent={true}
+        transparent
         animationType="slide"
         statusBarTranslucent={true}
         onRequestClose={onClose}>
@@ -213,7 +237,7 @@ const ActivityHistoryModal = ({
   return (
     <Modal
       visible={visible}
-      transparent={true}
+      transparent
       animationType="slide"
       statusBarTranslucent={true}
       onRequestClose={onClose}>
@@ -240,10 +264,6 @@ const ActivityHistoryModal = ({
               <View style={styles.statCard}>
                 <Text style={styles.statNumber}>{stats.totalActivities}</Text>
                 <Text style={styles.statLabel}>Activities</Text>
-              </View>
-              <View style={styles.statCard}>
-                <Text style={styles.statNumber}>{stats.totalDuration}</Text>
-                <Text style={styles.statLabel}>Total Time</Text>
               </View>
               <View style={styles.statCard}>
                 <Text style={styles.statNumber}>{stats.totalDuration}</Text>
@@ -279,21 +299,23 @@ const ActivityHistoryModal = ({
             )}
           </View>
 
-          {/* History List */}
-          <View style={styles.listContainer}>
+          {/* Recent Activities List - Scrollable Section */}
+          <View style={styles.scrollableSection}>
             <Text style={styles.listTitle}>Recent Activities</Text>
-            <FlatList
-              data={activityHistory}
-              keyExtractor={item => item.id.toString()}
-              showsVerticalScrollIndicator={false}
-              renderItem={renderActivityItem}
-              ListEmptyComponent={renderEmptyState}
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              contentContainerStyle={
-                activityHistory.length === 0 ? styles.emptyListContainer : null
-              }
-            />
+
+            {activityHistory.length === 0 ? (
+              renderEmptyState()
+            ) : (
+              <ScrollView
+                style={styles.scrollView}
+                showsVerticalScrollIndicator={true}>
+                {activityHistory.map((item, index) => (
+                  <View key={item.id || index}>
+                    {renderActivityItem({item, index})}
+                  </View>
+                ))}
+              </ScrollView>
+            )}
           </View>
 
           {/* Quick Actions */}
@@ -337,8 +359,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '90%',
+    maxHeight: '85%',
     paddingTop: 20,
+    flex: 1,
   },
   // Loading
   loadingContainer: {
@@ -350,12 +373,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
   },
-  // Header
+  // Header - Fixed
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     paddingHorizontal: 15,
+    paddingBottom: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
@@ -378,7 +402,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#666',
   },
-  // Statistics
+  // Statistics - Fixed
   statsContainer: {
     padding: 20,
     backgroundColor: '#f8f9fa',
@@ -444,10 +468,10 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 2,
   },
-  // History List
-  listContainer: {
+  // Scrollable Section - NEW
+  scrollableSection: {
     flex: 1,
-    paddingTop: 20,
+    paddingTop: 15,
   },
   listTitle: {
     fontSize: 16,
@@ -456,9 +480,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 10,
   },
-  emptyListContainer: {
-    flexGrow: 1,
+  scrollView: {
+    flex: 1,
+    paddingHorizontal: 0,
   },
+  // Activity Items
   historyItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -478,7 +504,7 @@ const styles = StyleSheet.create({
   },
   activityHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     alignItems: 'center',
     marginBottom: 4,
   },
@@ -487,12 +513,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333',
     flex: 1,
-  },
-  activityDuration: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#2196F3',
-    fontFamily: 'monospace',
   },
   activityDetails: {
     flexDirection: 'row',
@@ -517,6 +537,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#888',
   },
+  rightSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  activityDuration: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#2196F3',
+    fontFamily: 'monospace',
+  },
   repeatButton: {
     padding: 8,
     borderRadius: 8,
@@ -532,10 +563,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   emptyIcon: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
+    fontSize: 48,
+    marginBottom: 16,
   },
   emptyTitle: {
     fontSize: 18,
@@ -549,7 +578,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-  // Actions
+  // Actions - Fixed
   actions: {
     flexDirection: 'row',
     paddingHorizontal: 20,
