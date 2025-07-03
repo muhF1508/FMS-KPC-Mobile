@@ -1,5 +1,3 @@
-import {memo} from 'react';
-
 class ApiService {
   constructor() {
     // For Android Emulator, use 10.0.2.2 instead of localhost
@@ -45,7 +43,7 @@ class ApiService {
             errorMessage = 'Unauthorized - Akses ditolak';
             break;
           case 403:
-            errorMessage = 'Forbidden = Tidak memiliki izin';
+            errorMessage = 'Forbidden - Tidak memiliki izin';
             break;
           case 404:
             errorMessage = 'Not Found - Data tidak ditemukan';
@@ -116,21 +114,8 @@ class ApiService {
     }
   }
 
-  // Test database connection
-  async testDatabase() {
-    try {
-      const response = await fetch(`${this.healthURL}/test-db`);
-      const result = await response.json();
-      return result;
-    } catch (error) {
-      console.error('Database test failed:', error);
-      return {success: false, message: error.message};
-    }
-  }
-
   // ============ EMPLOYEE METHODS ============
 
-  // Validate employee login
   async validateEmployee(empId) {
     try {
       const result = await this.apiRequest(`/employees/${empId}`);
@@ -138,7 +123,6 @@ class ApiService {
       if (result.success) {
         return result;
       } else {
-        // Custom error message based on status
         return {
           success: false,
           message: 'ID Karyawan tidak ditemukan dalam database',
@@ -147,7 +131,6 @@ class ApiService {
     } catch (error) {
       console.error('Employee validation error:', error);
 
-      // Customize error message
       let errorMessage = 'ID Karyawan tidak terdaftar dalam database';
 
       if (
@@ -177,22 +160,10 @@ class ApiService {
     }
   }
 
-  // Get all employees (for testing)
-  async getAllEmployees() {
-    try {
-      return await this.apiRequest('/employees');
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Failed to get employees: ' + error.message,
-      };
-    }
-  }
+  // ============ SESSION METHODS (ENHANCED) ============
 
-  // ============ SESSION METHODS ============
-
-  // Create new session
-  async createSession(operatorId, unitId, hmAwal, actionType) {
+  // Create new session with shift support
+  async createSession(operatorId, unitId, hmAwal, shiftType, initialStatus) {
     try {
       const documentNumber = this.generateDocumentNumber();
 
@@ -201,6 +172,8 @@ class ApiService {
         unitId,
         hmAwal: parseInt(hmAwal),
         documentNumber,
+        shiftType, // 'DAY' or 'NIGHT'
+        initialStatus, // Status dari login screen
       };
 
       const result = await this.apiRequest('/sessions', 'POST', sessionData);
@@ -276,19 +249,72 @@ class ApiService {
     }
   }
 
-  // ============ ACTIVITY METHODS ============
+  // ============ GANTT CHART METHODS (NEW) ============
 
-  // Save activity
+  // Get Gantt chart data for session
+  async getGanttData(sessionNumber) {
+    try {
+      console.log('📊 Fetching Gantt chart data for session:', sessionNumber);
+
+      const result = await this.apiRequest(`/sessions/${sessionNumber}/gantt`);
+
+      if (result.success) {
+        return {
+          success: true,
+          data: result.data,
+          message: 'Gantt data berhasil diambil',
+        };
+      }
+
+      return {
+        success: false,
+        message: 'Gagal mengambil data Gantt chart',
+      };
+    } catch (error) {
+      console.error('Get Gantt data error:', error);
+
+      let errorMessage = 'Gagal mengambil data timeline aktivitas';
+
+      if (error.message.includes('HTTP 404')) {
+        errorMessage = 'Session tidak ditemukan';
+      } else if (error.message.includes('HTTP 500')) {
+        errorMessage = 'Terjadi kesalahan pada server';
+      } else if (error.message.includes('Network')) {
+        errorMessage = 'Koneksi bermasalah. Data mungkin tidak terbaru.';
+      }
+
+      return {
+        success: false,
+        message: errorMessage,
+      };
+    }
+  }
+
+  // ============ ACTIVITY METHODS (ENHANCED) ============
+
+  // Save activity with category support
   async saveActivity(activityData) {
     try {
-      const {activityName, startTime, endTime, sessionNumber} = activityData;
+      const {
+        activityName,
+        activityCode,
+        startTime,
+        endTime,
+        sessionNumber,
+        category,
+      } = activityData;
 
       const data = {
-        codeDelay: activityName,
+        codeDelay: activityCode || activityName,
+        activityName: activityName,
         datetimeStart: new Date(startTime).toISOString(),
-        duration: Math.floor((endTime - startTime) / 1000), // seconds(detik) output
+        datetimeEnd: endTime
+          ? new Date(endTime).toISOString()
+          : new Date().toISOString(),
+        duration: endTime ? Math.floor((endTime - startTime) / 1000) : 0,
         sessionNumber,
-        shiftId: this.getCurrentShift(),
+        category: category || 'work', // default to work if not specified
+        shift: this.getCurrentShift(),
       };
 
       const result = await this.apiRequest('/activities', 'POST', data);
@@ -370,18 +396,76 @@ class ApiService {
     return await this.getActivityCodes('work');
   }
 
-  // ============ REPORTING METHODS ============
+  // ============ SHIFT UTILITY METHODS (NEW) ============
 
-  // Get session report
-  async getSessionReport(sessionNumber) {
-    try {
-      return await this.apiRequest(`/reports/session/${sessionNumber}`);
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Get session report failed: ' + error.message,
-      };
+  // Get shift times based on shift type
+  getShiftTimes(shiftType, date = new Date()) {
+    const shiftDate = new Date(date);
+
+    if (shiftType === 'DAY') {
+      // Day shift: 06:00 - 18:00
+      const startTime = new Date(shiftDate);
+      startTime.setHours(6, 0, 0, 0);
+
+      const endTime = new Date(shiftDate);
+      endTime.setHours(18, 0, 0, 0);
+
+      return {startTime, endTime};
+    } else {
+      // Night shift: 18:00 - 06:00 next day
+      const startTime = new Date(shiftDate);
+      startTime.setHours(18, 0, 0, 0);
+
+      const endTime = new Date(shiftDate);
+      endTime.setDate(endTime.getDate() + 1);
+      endTime.setHours(6, 0, 0, 0);
+
+      return {startTime, endTime};
     }
+  }
+
+  // Check if current time is within shift
+  isWithinShift(shiftType, currentTime = new Date()) {
+    const {startTime, endTime} = this.getShiftTimes(shiftType, currentTime);
+
+    if (shiftType === 'DAY') {
+      return currentTime >= startTime && currentTime <= endTime;
+    } else {
+      // Night shift spans two days
+      return currentTime >= startTime || currentTime <= endTime;
+    }
+  }
+
+  // Get time progress within shift (0-100%)
+  getShiftProgress(shiftType, currentTime = new Date()) {
+    const {startTime, endTime} = this.getShiftTimes(shiftType, currentTime);
+
+    const totalDuration = endTime.getTime() - startTime.getTime();
+    let elapsed;
+
+    if (shiftType === 'DAY') {
+      elapsed = currentTime.getTime() - startTime.getTime();
+    } else {
+      // Handle night shift crossing midnight
+      if (currentTime >= startTime) {
+        elapsed = currentTime.getTime() - startTime.getTime();
+      } else {
+        // Next day
+        const midnight = new Date(startTime);
+        midnight.setDate(midnight.getDate() + 1);
+        midnight.setHours(0, 0, 0, 0);
+        elapsed =
+          midnight.getTime() -
+          startTime.getTime() +
+          (currentTime.getTime() - (midnight.getTime() - 24 * 60 * 60 * 1000));
+      }
+    }
+
+    const progress = Math.max(
+      0,
+      Math.min(100, (elapsed / totalDuration) * 100),
+    );
+    return Math.round(progress);
   }
 
   // ============ UTILITY METHODS ============
@@ -409,6 +493,21 @@ class ApiService {
       .padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
 
+  // Format duration for display
+  formatDuration(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${secs}s`;
+    } else {
+      return `${secs}s`;
+    }
+  }
+
   // Check if server is reachable
   async isServerReachable() {
     try {
@@ -424,6 +523,59 @@ class ApiService {
     this.baseURL = `http://${newIP}:3000/api`;
     this.healthURL = `http://${newIP}:3000`;
     console.log(`🔄 API Base URL updated to: ${this.baseURL}`);
+  }
+
+  // ============ CHART DATA FORMATTING ============
+
+  // Format Gantt data for chart display
+  formatGanttDataForChart(ganttData) {
+    if (!ganttData || !ganttData.timeline) {
+      return {
+        categories: [],
+        timeline: [],
+        timeGrid: [],
+        summary: [],
+      };
+    }
+
+    // Define category colors
+    const categoryColors = {
+      initial: '#00BCD4', // Cyan for initial status
+      work: '#4CAF50', // Green for work
+      delay: '#FF5722', // Red for delay
+      idle: '#9E9E9E', // Grey for idle
+      mt: '#673AB7', // Purple for maintenance
+    };
+
+    // Format timeline data for chart
+    const formattedTimeline = ganttData.timeline.map(activity => ({
+      ...activity,
+      color: categoryColors[activity.category] || '#2196F3',
+      startHour: new Date(activity.startTime).getHours(),
+      endHour: activity.endTime
+        ? new Date(activity.endTime).getHours()
+        : new Date().getHours(),
+      durationMinutes: Math.round(activity.duration / 60),
+    }));
+
+    // Format summary with colors
+    const formattedSummary = ganttData.summary.map(item => ({
+      ...item,
+      color: categoryColors[item.category] || '#2196F3',
+      percentage: 0, // Will be calculated in component
+    }));
+
+    return {
+      session: ganttData.session,
+      categories: Object.keys(categoryColors).map(key => ({
+        name: key.toUpperCase(),
+        color: categoryColors[key],
+        key: key,
+      })),
+      timeline: formattedTimeline,
+      timeGrid: ganttData.timeGrid || [],
+      summary: formattedSummary,
+    };
   }
 }
 

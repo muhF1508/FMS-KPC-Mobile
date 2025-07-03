@@ -22,15 +22,14 @@ const LoginScreen = ({navigation}) => {
     id: '',
     unitNumber: '',
     workType: '',
+    shiftType: '', // NEW: Shift type selection
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [serverStatus, setServerStatus] = useState('checking'); // checking online or offline
+  const [serverStatus, setServerStatus] = useState('checking');
 
   // Timer management
   const intervalRef = useRef(null);
   const secondsRef = useRef(0);
-
-  // ScrollView ref for auto-scroll
   const scrollViewRef = useRef(null);
 
   // Data untuk dropdown Unit Number dan Work Type
@@ -45,15 +44,37 @@ const LoginScreen = ({navigation}) => {
   const workTypes = [
     {label: 'SHIFT CHANGE', value: 'SHIFT CHANGE'},
     {label: 'UNIT READY', value: 'UNIT READY'},
-    {label: 'Pekerjaan C', value: 'Pekerjaan C'},
-    {label: 'Pekerjaan D', value: 'Pekerjaan D'},
-    {label: 'Pekerjaan E', value: 'Pekerjaan E'},
+    {label: 'SAFETY TALK', value: 'SAFETY TALK'},
+    {label: 'RAIN DELAY', value: 'RAIN'},
+    {label: 'BREAKDOWN', value: 'BREAKDOWN'},
+  ];
+
+  // NEW: Shift type options
+  const shiftTypes = [
+    {label: '🌅 Day Shift (06:00 - 18:00)', value: 'DAY'},
+    {label: '🌙 Night Shift (18:00 - 06:00)', value: 'NIGHT'},
   ];
 
   // Test API connection on component mount
   useEffect(() => {
     testApiConnection();
+    setDefaultShiftType();
   }, []);
+
+  // Set default shift type based on current time
+  const setDefaultShiftType = () => {
+    const currentHour = new Date().getHours();
+    const defaultShift = currentHour >= 6 && currentHour < 18 ? 'DAY' : 'NIGHT';
+
+    setFormData(prev => ({
+      ...prev,
+      shiftType: defaultShift,
+    }));
+
+    console.log(
+      `🕐 Auto-selected ${defaultShift} shift based on current time (${currentHour}:00)`,
+    );
+  };
 
   const testApiConnection = async () => {
     try {
@@ -66,7 +87,6 @@ const LoginScreen = ({navigation}) => {
         console.log('✅ API Connection successful');
         setServerStatus('online');
 
-        // Also test database
         const dbTest = await apiService.testDatabase();
         if (dbTest.success) {
           console.log('✅ Database connection successful');
@@ -82,11 +102,10 @@ const LoginScreen = ({navigation}) => {
     }
   };
 
-  // Data untuk dropdown Unit Number dan Work Type dengan highlight
+  // Enhanced data getters with shift information
   const getUnitNumbers = useCallback(() => {
     return unitNumbers.map(unit => ({
       ...unit,
-      // Style untuk selected item
       color: unit.value === formData.unitNumber ? '#2196F3' : '#333',
       backgroundColor:
         unit.value === formData.unitNumber ? '#e3f2fd' : 'transparent',
@@ -96,12 +115,20 @@ const LoginScreen = ({navigation}) => {
   const getWorkTypes = useCallback(() => {
     return workTypes.map(work => ({
       ...work,
-      // Style untuk selected item
       color: work.value === formData.workType ? '#2196F3' : '#333',
       backgroundColor:
         work.value === formData.workType ? '#e3f2fd' : 'transparent',
     }));
   }, [formData.workType]);
+
+  const getShiftTypes = useCallback(() => {
+    return shiftTypes.map(shift => ({
+      ...shift,
+      color: shift.value === formData.shiftType ? '#2196F3' : '#333',
+      backgroundColor:
+        shift.value === formData.shiftType ? '#e3f2fd' : 'transparent',
+    }));
+  }, [formData.shiftType]);
 
   // Cleanup timer saat component unmount
   useEffect(() => {
@@ -124,16 +151,13 @@ const LoginScreen = ({navigation}) => {
 
   // Fungsi untuk start timer
   const startTimer = useCallback(() => {
-    // Clear existing interval
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
 
-    // Reset seconds
     secondsRef.current = 0;
     setTimer('00:00:00');
 
-    // Start new interval
     intervalRef.current = setInterval(() => {
       secondsRef.current += 1;
       const formattedTime = formatTime(secondsRef.current);
@@ -144,14 +168,11 @@ const LoginScreen = ({navigation}) => {
   // Event Handlers
   const handleActionButton = useCallback(
     action => {
-      // Clear previous timer
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
 
-      // Set new action
       setSelectedAction(action);
-      // Start timer
       startTimer();
 
       setTimeout(() => {
@@ -162,9 +183,14 @@ const LoginScreen = ({navigation}) => {
   );
 
   const handleSubmit = useCallback(async () => {
-    // Validation
-    if (!formData.id || !formData.unitNumber || !formData.workType) {
-      Alert.alert('Error', 'Silakan isi semua field');
+    // Enhanced validation including shift type
+    if (
+      !formData.id ||
+      !formData.unitNumber ||
+      !formData.workType ||
+      !formData.shiftType
+    ) {
+      Alert.alert('Error', 'Silakan isi semua field termasuk jenis shift');
       return;
     }
     if (!selectedAction) {
@@ -175,9 +201,10 @@ const LoginScreen = ({navigation}) => {
     setIsLoading(true);
 
     try {
-      console.log('🚀 Starting login process...');
+      console.log('🚀 Starting enhanced login process...');
       console.log('📝 Form data:', formData);
       console.log('⚙️ Selected action:', selectedAction);
+      console.log('🕐 Shift type:', formData.shiftType);
 
       // Step 1: Validate employee
       console.log('🔍 Step 1: Validating employee...');
@@ -191,44 +218,91 @@ const LoginScreen = ({navigation}) => {
 
       console.log('✅ Employee validated:', employeeResult.data.NAME);
 
-      // Step 2: Create session
-      console.log('📝 Step 2: Creating session...');
-      const documentNumber = apiService.generateDocumentNumber();
+      // Step 2: Check shift timing
+      const isWithinShift = apiService.isWithinShift(formData.shiftType);
+      const shiftProgress = apiService.getShiftProgress(formData.shiftType);
 
-      // Step 3: Navigate to Dashboard with session data
-      // HM Awal will be handled in Dashboard modal
-      console.log('🚀 Step 3: Navigating to Dashboard...');
+      console.log(
+        `🕐 Shift validation: Within shift: ${isWithinShift}, Progress: ${shiftProgress}%`,
+      );
 
-      navigation.navigate('Dashboard', {
-        employee: employeeResult.data,
-        sessionData: {
-          documentNumber: documentNumber,
-          operatorId: formData.id,
-          unitId: formData.unitNumber,
-          workType: formData.workType,
-          actionType: selectedAction,
-        },
-        selectedAction,
-        formData,
-        currentTimer: timer,
-      });
-
-      console.log('✅ Navigation successful!');
+      // Warning if not within shift hours (but allow to continue)
+      if (!isWithinShift) {
+        const shiftLabel =
+          formData.shiftType === 'DAY'
+            ? 'Day (06:00-18:00)'
+            : 'Night (18:00-06:00)';
+        Alert.alert(
+          'Shift Time Warning',
+          `You're starting ${shiftLabel} shift outside normal hours. Continue anyway?`,
+          [
+            {
+              text: 'Cancel',
+              style: 'cancel',
+              onPress: () => setIsLoading(false),
+            },
+            {
+              text: 'Continue',
+              onPress: () => proceedWithLogin(employeeResult.data),
+            },
+          ],
+        );
+      } else {
+        proceedWithLogin(employeeResult.data);
+      }
     } catch (error) {
       console.error('💥 Login process failed:', error);
       Alert.alert('Error', 'Login failed: ' + error.message);
-    } finally {
       setIsLoading(false);
     }
   }, [formData, selectedAction, timer, navigation]);
 
+  const proceedWithLogin = employeeData => {
+    try {
+      console.log('🚀 Step 3: Proceeding to Dashboard...');
+
+      // Enhanced session data with shift information
+      const enhancedSessionData = {
+        documentNumber: apiService.generateDocumentNumber(),
+        operatorId: formData.id,
+        unitId: formData.unitNumber,
+        workType: formData.workType,
+        actionType: selectedAction,
+        shiftType: formData.shiftType, // NEW: Include shift type
+        initialStatus: selectedAction, // NEW: Initial status from login
+      };
+
+      // Enhanced form data
+      const enhancedFormData = {
+        ...formData,
+        shiftLabel: formData.shiftType === 'DAY' ? 'Day Shift' : 'Night Shift',
+        shiftTime:
+          formData.shiftType === 'DAY' ? '06:00 - 18:00' : '18:00 - 06:00',
+      };
+
+      navigation.navigate('Dashboard', {
+        employee: employeeData,
+        sessionData: enhancedSessionData,
+        selectedAction,
+        formData: enhancedFormData,
+        currentTimer: timer,
+        shiftType: formData.shiftType, // Pass shift type to dashboard
+      });
+
+      console.log('✅ Enhanced navigation successful!');
+    } catch (error) {
+      console.error('💥 Navigation failed:', error);
+      Alert.alert('Error', 'Failed to proceed to dashboard');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const resetForm = useCallback(() => {
-    // Clear timer
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
 
-    // Reset all states
     setSelectedAction(null);
     setTimer('00:00:00');
     secondsRef.current = 0;
@@ -236,8 +310,9 @@ const LoginScreen = ({navigation}) => {
       id: '',
       unitNumber: '',
       workType: '',
+      shiftType: formData.shiftType, // Keep shift type when resetting
     });
-  }, []);
+  }, [formData.shiftType]);
 
   // Picker change handlers
   const handleUnitNumberChange = useCallback(value => {
@@ -246,6 +321,11 @@ const LoginScreen = ({navigation}) => {
 
   const handleWorkTypeChange = useCallback(value => {
     setFormData(prev => ({...prev, workType: value}));
+  }, []);
+
+  const handleShiftTypeChange = useCallback(value => {
+    setFormData(prev => ({...prev, shiftType: value}));
+    console.log('🕐 Shift type changed to:', value);
   }, []);
 
   // Server status indicator
@@ -271,10 +351,34 @@ const LoginScreen = ({navigation}) => {
     }
   };
 
+  // Get shift timing info for display
+  const getShiftTimingInfo = () => {
+    if (!formData.shiftType) return null;
+
+    const isWithinShift = apiService.isWithinShift(formData.shiftType);
+    const progress = apiService.getShiftProgress(formData.shiftType);
+    const shiftTimes = apiService.getShiftTimes(formData.shiftType);
+
+    return {
+      isWithinShift,
+      progress,
+      startTime: shiftTimes.startTime.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      endTime: shiftTimes.endTime.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+    };
+  };
+
+  const shiftInfo = getShiftTimingInfo();
+
   const renderContent = () => {
     return (
       <>
-        {/* Server Status Indicator - Always at top */}
+        {/* Server Status Indicator */}
         <View style={styles.serverStatusContainer}>
           <Text
             style={[styles.serverStatusText, {color: getServerStatusColor()}]}>
@@ -296,6 +400,44 @@ const LoginScreen = ({navigation}) => {
           />
           <Text style={styles.tagline}>Mulai Sesi Anda</Text>
         </View>
+
+        {/* Shift Information Display */}
+        {formData.shiftType && shiftInfo && (
+          <View style={styles.shiftInfoContainer}>
+            <View style={styles.shiftInfoHeader}>
+              <Text style={styles.shiftInfoTitle}>
+                {formData.shiftType === 'DAY' ? '🌅' : '🌙'}{' '}
+                {formData.shiftType} Shift
+              </Text>
+              <Text style={styles.shiftInfoTime}>
+                {shiftInfo.startTime} - {shiftInfo.endTime}
+              </Text>
+            </View>
+
+            <View style={styles.shiftStatusContainer}>
+              <View
+                style={[
+                  styles.shiftStatusIndicator,
+                  {
+                    backgroundColor: shiftInfo.isWithinShift
+                      ? '#4CAF50'
+                      : '#FF9800',
+                  },
+                ]}
+              />
+              <Text style={styles.shiftStatusText}>
+                {shiftInfo.isWithinShift
+                  ? 'Within shift hours'
+                  : 'Outside shift hours'}
+              </Text>
+              {shiftInfo.isWithinShift && (
+                <Text style={styles.shiftProgressText}>
+                  Progress: {shiftInfo.progress}%
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
 
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
@@ -377,7 +519,7 @@ const LoginScreen = ({navigation}) => {
                 useNativeAndroidPickerStyle={false}
                 fixAndroidTouchableBug={true}
                 Icon={() => {
-                  return <Text style={styles.dropdownArrow}></Text>;
+                  return <Text style={styles.dropdownArrow}>▼</Text>;
                 }}
               />
             </View>
@@ -391,14 +533,34 @@ const LoginScreen = ({navigation}) => {
                   label: 'Pilih Work Type',
                   value: null,
                   color: '#999',
-                  disabled: true,
                 }}
                 value={formData.workType}
                 style={pickerSelectStyles}
                 useNativeAndroidPickerStyle={false}
                 fixAndroidTouchableBug={true}
                 Icon={() => {
-                  return <Text style={styles.dropdownArrow}></Text>;
+                  return <Text style={styles.dropdownArrow}>▼</Text>;
+                }}
+              />
+            </View>
+
+            {/* NEW: Shift Type Picker */}
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Jenis Shift:</Text>
+              <RNPickerSelect
+                onValueChange={handleShiftTypeChange}
+                items={getShiftTypes()}
+                placeholder={{
+                  label: 'Pilih Jenis Shift',
+                  value: null,
+                  color: '#999',
+                }}
+                value={formData.shiftType}
+                style={pickerSelectStyles}
+                useNativeAndroidPickerStyle={false}
+                fixAndroidTouchableBug={true}
+                Icon={() => {
+                  return <Text style={styles.dropdownArrow}>▼</Text>;
                 }}
               />
             </View>
@@ -412,7 +574,7 @@ const LoginScreen = ({navigation}) => {
               disabled={isLoading}
               activeOpacity={0.8}>
               <Text style={styles.submitButtonText}>
-                {isLoading ? 'Connecting...' : 'Mulai'}
+                {isLoading ? 'Connecting...' : 'Mulai Shift'}
               </Text>
             </TouchableOpacity>
 
@@ -420,7 +582,7 @@ const LoginScreen = ({navigation}) => {
               style={styles.resetButton}
               onPress={resetForm}
               activeOpacity={0.8}>
-              <Text style={styles.resetButtonText}>Reset</Text>
+              <Text style={styles.resetButtonText}>🔄 Reset</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -441,7 +603,6 @@ const LoginScreen = ({navigation}) => {
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}>
-        {/* CONDITIONAL RENDERING: ScrollView only active when action is selected */}
         {selectedAction ? (
           <ScrollView
             ref={scrollViewRef}
@@ -459,7 +620,7 @@ const LoginScreen = ({navigation}) => {
   );
 };
 
-// Styles untuk RNPickerSelect
+// Enhanced Styles untuk RNPickerSelect
 const pickerSelectStyles = StyleSheet.create({
   inputIOS: {
     fontSize: 16,
@@ -548,6 +709,53 @@ const styles = StyleSheet.create({
     color: '#000',
     fontWeight: 'bold',
     marginTop: 5,
+  },
+  // NEW: Shift info styles
+  shiftInfoContainer: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#2196F3',
+  },
+  shiftInfoHeader: {
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  shiftInfoTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1976D2',
+    marginBottom: 4,
+  },
+  shiftInfoTime: {
+    fontSize: 14,
+    color: '#1565C0',
+    fontWeight: '500',
+  },
+  shiftStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+  },
+  shiftStatusIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  shiftStatusText: {
+    fontSize: 12,
+    color: '#1976D2',
+    fontWeight: 'bold',
+    marginRight: 10,
+  },
+  shiftProgressText: {
+    fontSize: 11,
+    color: '#1565C0',
+    fontStyle: 'italic',
   },
   // Action buttons
   actionButtons: {
@@ -656,6 +864,12 @@ const styles = StyleSheet.create({
   inputContainer: {
     marginBottom: 20,
   },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 5,
+  },
   input: {
     borderWidth: 1,
     borderColor: '#ddd',
@@ -699,7 +913,7 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16,
   },
-  // Bottom spacing to ensure content is fully scrollable
+  // Bottom spacing
   bottomSpacing: {
     height: 50,
   },

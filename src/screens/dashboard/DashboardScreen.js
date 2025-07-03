@@ -16,16 +16,22 @@ import WorkContent from '../../components/WorkContent';
 import DelayContent from '../../components/DelayContent';
 import IdleContent from '../../components/IdleContent';
 import MTContent from '../../components/MTContent';
-import ActivityHistoryModal from '../../components/ActivityHistoryModal';
+import GanttChartModal from '../../components/GanttChartModal'; // NEW: Replace ActivityHistoryModal
 
 // Import services
 import apiService from '../../services/ApiService';
 import ActivityHistoryService from '../../services/ActivityHistoryService';
 
 const DashboardScreen = ({route, navigation}) => {
-  // Data dari LoginScreen
-  const {employee, sessionData, selectedAction, formData, currentTimer} =
-    route?.params || {};
+  // Enhanced data dari LoginScreen
+  const {
+    employee,
+    sessionData,
+    selectedAction,
+    formData,
+    currentTimer,
+    shiftType,
+  } = route?.params || {};
 
   // State untuk tab navigation
   const [activeTab, setActiveTab] = useState('work');
@@ -35,8 +41,8 @@ const DashboardScreen = ({route, navigation}) => {
   const [sessionCreated, setSessionCreated] = useState(false);
   const [isEndingShift, setIsEndingShift] = useState(false);
 
-  // History-related states
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  // NEW: Gantt chart modal state
+  const [showGanttModal, setShowGanttModal] = useState(false);
   const [historyCount, setHistoryCount] = useState(0);
 
   // Timer states
@@ -57,7 +63,7 @@ const DashboardScreen = ({route, navigation}) => {
 
   const globalActivityRef = useRef(null);
 
-  // Simplified global state
+  // Enhanced global state with shift information
   const [globalData, setGlobalData] = useState({
     // Data dari login
     selectedAction: selectedAction || 'SHIFT CHANGE',
@@ -65,6 +71,11 @@ const DashboardScreen = ({route, navigation}) => {
     currentTimer: sessionTimer,
     employee: employee || {},
     sessionData: sessionData || {},
+
+    // NEW: Shift information
+    shiftType: shiftType || 'DAY',
+    shiftLabel: formData?.shiftLabel || 'Day Shift',
+    shiftTime: formData?.shiftTime || '06:00 - 18:00',
 
     // Session info
     sessionId: null,
@@ -85,7 +96,6 @@ const DashboardScreen = ({route, navigation}) => {
     // Dashboard info
     welcomeId: employee?.EMP_ID || formData?.id || '18971',
     welcomeName: employee?.NAME || 'Operator',
-    shiftType: 'Shift Day',
     status: selectedAction || 'SHIFT CHANGE',
   });
 
@@ -99,6 +109,23 @@ const DashboardScreen = ({route, navigation}) => {
   const [showHmAwalModal, setShowHmAwalModal] = useState(true);
   const [showEndShiftModal, setShowEndShiftModal] = useState(false);
   const [hmAkhirShift, setHmAkhirShift] = useState('');
+
+  // ============ SHIFT MANAGEMENT ============
+
+  useEffect(() => {
+    // Check if within shift hours and log shift info
+    const isWithinShift = apiService.isWithinShift(globalData.shiftType);
+    const progress = apiService.getShiftProgress(globalData.shiftType);
+
+    console.log(
+      `🕐 Shift Info: ${globalData.shiftType} (${globalData.shiftTime})`,
+    );
+    console.log(`🕐 Within shift: ${isWithinShift}, Progress: ${progress}%`);
+
+    if (!isWithinShift) {
+      console.log('⚠️ Starting outside normal shift hours');
+    }
+  }, [globalData.shiftType]);
 
   // ============ HISTORY FUNCTIONS ============
 
@@ -115,28 +142,6 @@ const DashboardScreen = ({route, navigation}) => {
       console.log(`📊 History count loaded: ${count} activities`);
     } catch (error) {
       console.error('Failed to load history count:', error);
-    }
-  };
-
-  const handleRepeatActivity = async activity => {
-    try {
-      console.log(`🔄 Repeating activity: ${activity.activityName}`);
-
-      await startGlobalActivity(
-        activity.activityName,
-        activity.activityCode,
-        activity.sourceTab,
-      );
-
-      setActiveTab(activity.sourceTab);
-      setShowHistoryModal(false);
-
-      console.log(
-        `✅ Activity repeated and switched to ${activity.sourceTab} tab`,
-      );
-    } catch (error) {
-      console.error('Failed to repeat activity:', error);
-      Alert.alert('Error', 'Gagal mengulangi aktivitas');
     }
   };
 
@@ -237,15 +242,18 @@ const DashboardScreen = ({route, navigation}) => {
       seconds: 0,
     });
 
+    // Enhanced auto-save with category support
     if (autoSave && globalData.documentNumber && activityToSave.startTime) {
       try {
         console.log(`💾 Auto-saving activity: ${activityToSave.activityName}`);
 
         const activityData = {
           activityName: activityToSave.activityName,
+          activityCode: activityToSave.activityCode,
           startTime: activityToSave.startTime,
           endTime: endTime,
           sessionNumber: globalData.documentNumber,
+          category: activityToSave.sourceTab, // Map sourceTab to category
         };
 
         const response = await apiService.saveActivity(activityData);
@@ -375,17 +383,22 @@ const DashboardScreen = ({route, navigation}) => {
     setIsLoading(true);
 
     try {
-      console.log('🔄 Creating session with HM Awal:', hmValue);
+      console.log('🔄 Creating enhanced session with HM Awal:', hmValue);
 
+      // Enhanced session creation with shift type and initial status
       const response = await apiService.createSession(
         globalData.sessionData.operatorId,
         globalData.sessionData.unitId,
         hmValue,
-        globalData.sessionData.actionType,
+        globalData.shiftType, // Pass shift type
+        globalData.sessionData.initialStatus, // Pass initial status
       );
 
       if (response.success) {
-        console.log('✅ Session created successfully:', response.session);
+        console.log(
+          '✅ Enhanced session created successfully:',
+          response.session,
+        );
 
         updateGlobalData({
           isHmAwalSet: true,
@@ -398,7 +411,10 @@ const DashboardScreen = ({route, navigation}) => {
 
         Alert.alert(
           'Success',
-          `Session berhasil dibuat!\nDocument Number: ${response.documentNumber}\nHM Awal: ${hmValue}`,
+          `Session berhasil dibuat!\n` +
+            `Document Number: ${response.documentNumber}\n` +
+            `HM Awal: ${hmValue}\n` +
+            `Shift: ${globalData.shiftLabel} (${globalData.shiftTime})`,
         );
       } else {
         throw new Error(response.message || 'Failed to create session');
@@ -493,11 +509,12 @@ const DashboardScreen = ({route, navigation}) => {
 
       Alert.alert(
         'Shift Selesai! 🎉',
-        `Ringkasan Shift:\n\n` +
+        `Ringkasan ${globalData.shiftLabel}:\n\n` +
           `👤 Operator: ${
             globalData.employee?.NAME || globalData.welcomeId
           }\n` +
           `🚛 Unit: ${globalData.formData?.unitNumber}\n` +
+          `🕐 Shift: ${globalData.shiftLabel} (${globalData.shiftTime})\n` +
           `⏰ Durasi: ${sessionDuration}\n` +
           `📏 HM Awal: ${globalData.hmAwal}\n` +
           `📏 HM Akhir: ${hmValue}\n` +
@@ -583,14 +600,14 @@ const DashboardScreen = ({route, navigation}) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header Section */}
+      {/* Enhanced Header Section with Shift Info */}
       <View style={styles.headerSection}>
         {/* Top Row */}
         <View style={styles.topRow}>
           <View style={styles.leftColumn}>
             <Text style={styles.welcomeLabel}>Welcome :</Text>
             <Text style={styles.welcomeValue}>{globalData.welcomeName}</Text>
-            <Text style={styles.shiftValue}>{globalData.shiftType}</Text>
+            <Text style={styles.shiftValue}>{globalData.shiftLabel}</Text>
           </View>
 
           <View style={styles.centerColumn}>
@@ -638,10 +655,11 @@ const DashboardScreen = ({route, navigation}) => {
           </View>
         </View>
 
-        {/* Session Info Row */}
+        {/* Enhanced Session Info Row */}
         <View style={styles.sessionInfoRow}>
           <Text style={styles.sessionInfoText}>
-            Doc: {globalData.documentNumber || 'N/A'}
+            🕐 {globalData.shiftTime} | Doc:{' '}
+            {globalData.documentNumber || 'N/A'}
             {globalData.sessionId &&
               ` | Session: ${globalData.sessionId.toString().slice(-6)}`}
             {!sessionCreated && ' | ⚠️ Creating...'}
@@ -649,7 +667,7 @@ const DashboardScreen = ({route, navigation}) => {
         </View>
       </View>
 
-      {/* HM Awal Modal */}
+      {/* HM Awal Modal - Enhanced with shift info */}
       <Modal
         visible={showHmAwalModal && !globalData.isHmAwalSet}
         transparent={true}
@@ -660,7 +678,8 @@ const DashboardScreen = ({route, navigation}) => {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Masukkan HM Awal</Text>
             <Text style={styles.modalSubtitle}>
-              Silakan masukkan Hour Meter awal sebelum memulai shift
+              Silakan masukkan Hour Meter awal sebelum memulai{' '}
+              {globalData.shiftLabel}
             </Text>
 
             {employee && (
@@ -670,6 +689,9 @@ const DashboardScreen = ({route, navigation}) => {
                 </Text>
                 <Text style={styles.employeeInfoText}>
                   Unit: {globalData.formData?.unitNumber}
+                </Text>
+                <Text style={styles.employeeInfoText}>
+                  🕐 {globalData.shiftLabel}: {globalData.shiftTime}
                 </Text>
               </View>
             )}
@@ -695,7 +717,7 @@ const DashboardScreen = ({route, navigation}) => {
                 <ActivityIndicator color="white" size="small" />
               ) : (
                 <Text style={styles.modalButtonText}>
-                  Simpan & Mulai Session
+                  Simpan & Mulai {globalData.shiftLabel}
                 </Text>
               )}
             </TouchableOpacity>
@@ -703,7 +725,7 @@ const DashboardScreen = ({route, navigation}) => {
         </View>
       </Modal>
 
-      {/* End Shift Modal */}
+      {/* End Shift Modal - Enhanced */}
       <Modal
         visible={showEndShiftModal}
         transparent={true}
@@ -712,18 +734,24 @@ const DashboardScreen = ({route, navigation}) => {
         onRequestClose={handleEndShiftModalClose}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Akhir Shift</Text>
+            <Text style={styles.modalTitle}>Akhir {globalData.shiftLabel}</Text>
             <Text style={styles.modalSubtitle}>
-              Masukkan Hour Meter akhir untuk menyelesaikan shift
+              Masukkan Hour Meter akhir untuk menyelesaikan{' '}
+              {globalData.shiftLabel}
             </Text>
 
             <View style={styles.sessionSummary}>
-              <Text style={styles.summaryTitle}>📊 Ringkasan Shift</Text>
+              <Text style={styles.summaryTitle}>
+                📊 Ringkasan {globalData.shiftLabel}
+              </Text>
               <Text style={styles.summaryText}>
                 Operator: {globalData.employee?.NAME || globalData.welcomeId}
               </Text>
               <Text style={styles.summaryText}>
                 Unit: {globalData.formData?.unitNumber}
+              </Text>
+              <Text style={styles.summaryText}>
+                🕐 Shift: {globalData.shiftTime}
               </Text>
               <Text style={styles.summaryText}>
                 HM Awal: {globalData.hmAwal}
@@ -769,7 +797,9 @@ const DashboardScreen = ({route, navigation}) => {
                 {isEndingShift ? (
                   <ActivityIndicator color="white" size="small" />
                 ) : (
-                  <Text style={styles.modalSubmitText}>Akhiri Shift</Text>
+                  <Text style={styles.modalSubmitText}>
+                    Akhiri {globalData.shiftLabel}
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -777,13 +807,13 @@ const DashboardScreen = ({route, navigation}) => {
         </View>
       </Modal>
 
-      {/* Activity History Modal */}
-      <ActivityHistoryModal
-        visible={showHistoryModal}
-        onClose={() => setShowHistoryModal(false)}
-        operatorId={globalData.welcomeId}
+      {/* NEW: Gantt Chart Modal (replaces ActivityHistoryModal) */}
+      <GanttChartModal
+        visible={showGanttModal}
+        onClose={() => setShowGanttModal(false)}
+        sessionNumber={globalData.documentNumber}
         operatorName={globalData.welcomeName}
-        onRepeatActivity={handleRepeatActivity}
+        shiftType={globalData.shiftType}
       />
 
       {/* Main Content Area */}
@@ -809,12 +839,12 @@ const DashboardScreen = ({route, navigation}) => {
         </View>
       )}
 
-      {/* Floating Action Button for History */}
+      {/* Enhanced Floating Action Button for Gantt Chart */}
       <TouchableOpacity
-        style={styles.fabHistory}
-        onPress={() => setShowHistoryModal(true)}
+        style={styles.fabGantt}
+        onPress={() => setShowGanttModal(true)}
         activeOpacity={0.8}>
-        <Text style={styles.fabIcon}>📚</Text>
+        <Text style={styles.fabIcon}>📊</Text>
         {historyCount > 0 && (
           <View style={styles.fabBadge}>
             <Text style={styles.fabBadgeText}>
@@ -1123,8 +1153,8 @@ const styles = StyleSheet.create({
   contentArea: {
     flex: 1,
   },
-  // Floating Action Button untuk History
-  fabHistory: {
+  // Enhanced Floating Action Button untuk Gantt Chart
+  fabGantt: {
     position: 'absolute',
     bottom: 90,
     right: 20,
@@ -1169,7 +1199,7 @@ const styles = StyleSheet.create({
   // Global Activity Banner (when active)
   globalActivityBanner: {
     position: 'absolute',
-    bottom: 95, // Same level
+    bottom: 95,
     left: 15,
     right: 90,
     backgroundColor: '#E8F5E8',
