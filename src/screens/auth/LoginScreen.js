@@ -76,29 +76,72 @@ const LoginScreen = ({navigation}) => {
     );
   };
 
-  const testApiConnection = async () => {
+  const testApiConnection = async (retryCount = 0) => {
+    const maxRetries = 3;
+
     try {
-      console.log('🔍 Testing API connection...');
+      console.log(
+        `🔍 Testing API connection (attempt ${retryCount + 1}/${
+          maxRetries + 1
+        })...`,
+      );
       setServerStatus('checking');
 
+      // STEP 1: Test health endpoint - INI YANG UTAMA
+      console.log('🏥 Step 1: Testing health endpoint...');
       const health = await apiService.checkHealth();
+      console.log('🏥 Health response:', health);
 
       if (health.success) {
-        console.log('✅ API Connection successful');
-        setServerStatus('online');
+        console.log('✅ Health check successful');
 
-        const dbTest = await apiService.testDatabase();
-        if (dbTest.success) {
-          console.log('✅ Database connection successful');
-          console.log('📊 Employee count:', dbTest.data.employee_count);
+        // LANGSUNG SET STATUS ONLINE setelah health check berhasil
+        setServerStatus('online');
+        console.log('✅ API Connection successful - Server is ONLINE');
+
+        // STEP 2: Optional database test (tidak akan gagalkan proses login)
+        try {
+          console.log('🔍 Step 2: Testing database endpoint (optional)...');
+          const dbTest = await apiService.testDatabase();
+          console.log('🔍 Database test response:', dbTest);
+
+          if (dbTest && dbTest.success) {
+            console.log('✅ Database connection confirmed');
+            console.log('📊 Employee count:', dbTest.data?.employee_count);
+          } else {
+            console.warn(
+              '⚠️ Database test failed but health check passed - CONTINUING ANYWAY',
+            );
+            console.warn('⚠️ Database response:', dbTest);
+          }
+        } catch (dbError) {
+          console.warn(
+            '⚠️ Database test error (NON-CRITICAL):',
+            dbError.message,
+          );
+          console.warn(
+            '⚠️ App will continue working - health check already passed',
+          );
+          // TIDAK MENGUBAH server status - health check sudah berhasil
         }
       } else {
-        console.log('⚠️ API Connection failed:', health.message);
-        setServerStatus('offline');
+        // Health check gagal - ini baru masalah serius
+        throw new Error(health.message || 'Health check failed');
       }
     } catch (error) {
-      console.log('💥 API Connection error:', error.message);
-      setServerStatus('offline');
+      console.log(
+        `💥 API Connection error (attempt ${retryCount + 1}):`,
+        error.message,
+      );
+
+      // Retry logic hanya untuk health check yang gagal
+      if (retryCount < maxRetries) {
+        console.log(`🔄 Retrying in 2 seconds...`);
+        setTimeout(() => testApiConnection(retryCount + 1), 2000);
+      } else {
+        console.log('❌ All retry attempts failed - server is OFFLINE');
+        setServerStatus('offline');
+      }
     }
   };
 

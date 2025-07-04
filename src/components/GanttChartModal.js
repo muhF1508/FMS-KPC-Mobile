@@ -81,7 +81,7 @@ const GanttChartModal = ({
 
     if (shiftType === 'DAY') {
       // Day shift: 6 AM to 6 PM
-      for (let hour = start; hour <= end; hour += 3) {
+      for (let hour = start; hour <= end; hour += 1) {
         labels.push({
           hour,
           label: `${hour.toString().padStart(2, '0')}:00`,
@@ -90,7 +90,7 @@ const GanttChartModal = ({
       }
     } else {
       // Night shift: 6 PM to 6 AM (cross midnight)
-      for (let i = 0; i <= 12; i += 3) {
+      for (let i = 0; i <= 12; i += 1) {
         const hour = (start + i) % 24;
         labels.push({
           hour,

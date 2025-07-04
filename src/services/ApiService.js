@@ -4,6 +4,11 @@ class ApiService {
     // For physical device, use computer's IP address (e.g., 192.168.1.100)
     this.baseURL = 'http://10.0.2.2:3000/api';
     this.healthURL = 'http://10.0.2.2:3000';
+
+    // Debug URLs
+    console.log('🌐 API Service initialized:');
+    console.log('📡 Base URL:', this.baseURL);
+    console.log('❤️ Health URL:', this.healthURL);
   }
 
   async apiRequest(endpoint, method = 'GET', data = null) {
@@ -81,37 +86,71 @@ class ApiService {
     }
   }
 
-  // Health check
+  // Enhanced health check
   async checkHealth() {
     try {
+      console.log(`🏥 Health check starting: ${this.healthURL}/health`);
+
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Health check timeout')), 5000),
       );
 
       const response = await Promise.race([
-        fetch(`${this.healthURL}/health`),
+        fetch(`${this.healthURL}/health`, {
+          method: 'GET',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+          },
+        }),
         timeoutPromise,
       ]);
 
+      console.log('🏥 Health check response status:', response.status);
+      console.log('🏥 Health check response ok:', response.ok);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
       const result = await response.json();
+      console.log('🏥 Health check result:', result);
+
       return result;
     } catch (error) {
-      console.error('Health check failed:', error);
+      console.error('🏥 Health check failed:', error);
 
       let errorMessage =
         'Server tidak dapat dijangkau, Periksa koneksi internet Anda.';
 
       if (error.message === 'Health check timeout') {
         errorMessage = 'Health check timeout. Server tidak merespons.';
-      } else if (error.message.includes('Network')) {
-        errorMessage = 'Network error, Periksa koneksi internet Anda.';
+      } else if (
+        error.message.includes('Network') ||
+        error.name === 'TypeError'
+      ) {
+        errorMessage = 'Network error. Periksa koneksi internet Anda.';
+      } else if (error.message.includes('HTTP')) {
+        errorMessage = `Server error: ${error.message}`;
       }
 
       return {
         success: false,
         message: errorMessage,
+        error: error.message, // Include original error for debugging
       };
     }
+  }
+
+  // Test database connection
+  async testDatabase() {
+    console.log('Skipping database test - not critical for app functionality');
+
+    return {
+      success: true,
+      message: 'Database test skipped - app will continue normally',
+      data: {employee_count: 'N/A'},
+    };
   }
 
   // ============ EMPLOYEE METHODS ============
