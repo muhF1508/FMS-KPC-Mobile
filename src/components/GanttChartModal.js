@@ -348,38 +348,69 @@ const GanttChartModal = ({
                   </View>
                 )}
 
-                {/* Session Info */}
-                {ganttData.session && (
-                  <View style={styles.sessionContainer}>
-                    <Text style={styles.sessionTitle}>📋 Session Details</Text>
-                    <View style={styles.sessionGrid}>
-                      <View style={styles.sessionItem}>
-                        <Text style={styles.sessionLabel}>Operator</Text>
-                        <Text style={styles.sessionValue}>
-                          {ganttData.session.operatorName}
-                        </Text>
-                      </View>
-                      <View style={styles.sessionItem}>
-                        <Text style={styles.sessionLabel}>Unit</Text>
-                        <Text style={styles.sessionValue}>
-                          {ganttData.session.unitId}
-                        </Text>
-                      </View>
-                      <View style={styles.sessionItem}>
-                        <Text style={styles.sessionLabel}>HM Start</Text>
-                        <Text style={styles.sessionValue}>
-                          {ganttData.session.hmAwal}
-                        </Text>
-                      </View>
-                      <View style={styles.sessionItem}>
-                        <Text style={styles.sessionLabel}>HM End</Text>
-                        <Text style={styles.sessionValue}>
-                          {ganttData.session.hmAkhir || 'Ongoing'}
-                        </Text>
+                {/* Detail Kronologis */}
+                {ganttData.chronologicalDetails &&
+                  ganttData.chronologicalDetails.length > 0 && (
+                    <View style={styles.chronologicalContainer}>
+                      <Text style={styles.chronologicalTitle}>
+                        📝 Detail Aktivitas
+                      </Text>
+                      <View style={styles.chronologicalList}>
+                        {ganttData.chronologicalDetails.map(
+                          (activity, index) => (
+                            <View
+                              key={activity.id}
+                              style={styles.chronologicalItem}>
+                              {/* Activity Number */}
+                              <View style={styles.activityNumber}>
+                                <Text style={styles.activityNumberText}>
+                                  {activity.sequence}
+                                </Text>
+                              </View>
+
+                              {/* Activity Details */}
+                              <View style={styles.activityDetails}>
+                                <View style={styles.activityHeader}>
+                                  <Text
+                                    style={styles.activityName}
+                                    numberOfLines={1}>
+                                    {activity.activityName}
+                                  </Text>
+                                  {activity.activityCode && (
+                                    <Text style={styles.activityCode}>
+                                      {activity.activityCode}
+                                    </Text>
+                                  )}
+                                </View>
+
+                                <View style={styles.activityTimeInfo}>
+                                  <Text style={styles.activityTimeRange}>
+                                    {activity.timeRange}
+                                  </Text>
+                                  <Text style={styles.activityDuration}>
+                                    ({activity.duration})
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* Category Badge */}
+                              <View style={styles.activityCategory}>
+                                <View
+                                  style={[
+                                    styles.categoryBadge,
+                                    {backgroundColor: activity.categoryColor},
+                                  ]}>
+                                  <Text style={styles.categoryText}>
+                                    {activity.categoryName}
+                                  </Text>
+                                </View>
+                              </View>
+                            </View>
+                          ),
+                        )}
                       </View>
                     </View>
-                  </View>
-                )}
+                  )}
               </>
             ) : (
               <View style={styles.noDataContainer}>
@@ -690,7 +721,142 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#999',
   },
+  // Detail Aktivitas with Scroll
+  chronologicalContainer: {
+    marginVertical: 15,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 15,
+  },
+  chronologicalHeadeer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  chronologicalTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  chronologicalCount: {
+    fontSize: 12,
+    color: '#666',
+    backgroundColor: '#e3f2fd',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  chronologicalScrollView: {
+    maxHeight: 300,
+    marginBottom: 5,
+  },
+  chronologicalScrollContent: {
+    paddingBottom: 10,
+  },
+  chronologicalList: {
+    gap: 8,
+  },
+  scrollIndicator: {
+    alignItems: 'center',
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    marginTop: 5,
+  },
+  scrollIndicatorText: {
+    fontSize: 11,
+    color: '#999',
+    fontStyle: 'italic',
+  },
+  chronologicalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 12,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
 
+  // Activity Number
+  activityNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#2196F3',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  activityNumberText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+
+  // Activity Details
+  activityDetails: {
+    flex: 1,
+    marginRight: 10,
+  },
+  activityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  activityName: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    flex: 1,
+    marginRight: 8,
+  },
+  activityCode: {
+    fontSize: 10,
+    color: '#666',
+    backgroundColor: '#f0f0f0',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 3,
+  },
+  activityTimeInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  activityTimeRange: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500',
+    marginRight: 6,
+  },
+  activityDuration: {
+    fontSize: 11,
+    color: '#999',
+    fontStyle: 'italic',
+  },
+
+  // Category Badge
+  activityCategory: {
+    alignItems: 'flex-end',
+  },
+  categoryBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    minWidth: 70,
+    alignItems: 'center',
+  },
+  categoryText: {
+    color: 'white',
+    fontSize: 9,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
   // Session Details
   sessionContainer: {
     marginVertical: 15,

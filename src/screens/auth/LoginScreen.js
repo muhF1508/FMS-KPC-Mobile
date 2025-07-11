@@ -14,8 +14,12 @@ import {
 } from 'react-native';
 import RNPickerSelect from 'react-native-picker-select';
 import apiService from '../../services/ApiService';
+import SessionHistoryModal from '../../components/SessionHistoryModal';
 
 const LoginScreen = ({navigation}) => {
+  // State for history modal
+  const [showSessionHistory, setShowSessionHistory] = useState(false);
+
   const [selectedAction, setSelectedAction] = useState(null);
   const [timer, setTimer] = useState('00:00:00');
   const [formData, setFormData] = useState({
@@ -44,9 +48,9 @@ const LoginScreen = ({navigation}) => {
   const workTypes = [
     {label: 'SHIFT CHANGE', value: 'SHIFT CHANGE'},
     {label: 'UNIT READY', value: 'UNIT READY'},
-    {label: 'SAFETY TALK', value: 'SAFETY TALK'},
-    {label: 'RAIN DELAY', value: 'RAIN'},
-    {label: 'BREAKDOWN', value: 'BREAKDOWN'},
+    {label: 'PEKERJAAN 01', value: 'PEKERJAAN 01'},
+    {label: 'PEKERJAAN 02', value: 'PEKERJAAN 02'},
+    {label: 'PEKERJAAN 03', value: 'PEKERJAAN 03'},
   ];
 
   // NEW: Shift type options
@@ -421,6 +425,16 @@ const LoginScreen = ({navigation}) => {
   const renderContent = () => {
     return (
       <>
+        {/* History Button */}
+        <View style={styles.topControls}>
+          <TouchableOpacity
+            style={styles.historyButton}
+            onPress={() => setShowSessionHistory(true)}
+            activeOpacity={0.7}>
+            <Text style={styles.historyButtonText}>📚</Text>
+            <Text style={styles.historyButtonLabel}>History</Text>
+          </TouchableOpacity>
+        </View>
         {/* Server Status Indicator */}
         <View style={styles.serverStatusContainer}>
           <Text
@@ -659,6 +673,12 @@ const LoginScreen = ({navigation}) => {
           <View style={styles.centeredContent}>{renderContent()}</View>
         )}
       </KeyboardAvoidingView>
+
+      {/* Session History Modal */}
+      <SessionHistoryModal
+        visible={showSessionHistory}
+        onClose={() => setShowSessionHistory(false)}
+      />
     </SafeAreaView>
   );
 };
@@ -716,6 +736,35 @@ const styles = StyleSheet.create({
   scrollViewContent: {
     flexGrow: 1,
     padding: 20,
+  },
+  // Top Controls
+  topControls: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    zIndex: 1000,
+  },
+  historyButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  historyButtonText: {
+    fontSize: 16,
+    marginRight: 4,
+  },
+  historyButtonLabel: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#2196F3',
   },
   // Server status styles
   serverStatusContainer: {

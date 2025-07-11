@@ -10,6 +10,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
+import ActivityHistoryService from '../services/ActivityHistoryService';
 
 const MTContent = ({
   globalData,
@@ -112,6 +113,18 @@ const MTContent = ({
             console.warn('⚠️ Failed to end session:', endResponse.message);
           }
         }
+      }
+
+      // New Function: to clear activity history
+      console.log('🧹 Clearing activity history...');
+      const clearSuccess = await ActivityHistoryService.clearHistory(
+        globalData.welcomeId,
+      );
+
+      if (clearSuccess) {
+        console.log('✅ Activity history cleared successfully');
+      } else {
+        console.warn('⚠️ Failed to clear activity history');
       }
 
       // Update global data dengan maintenance info

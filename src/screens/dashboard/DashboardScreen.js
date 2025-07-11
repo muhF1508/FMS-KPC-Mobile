@@ -502,6 +502,11 @@ const DashboardScreen = ({route, navigation}) => {
         }
       }
 
+      // New Function: Clear activity history after successful shift
+      console.log('🧹 Clearing activity history...');
+      await ActivityHistoryService.clearHistory(globalData.welcomeId);
+      setHistoryCount(0);
+
       const sessionDuration = sessionTimer;
       const hmDifference = hmValue - hmAwalValue;
 

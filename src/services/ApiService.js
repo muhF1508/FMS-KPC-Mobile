@@ -199,7 +199,7 @@ class ApiService {
     }
   }
 
-  // ============ SESSION METHODS (ENHANCED) ============
+  // ============ SESSION METHODS ============
 
   // Create new session with shift support
   async createSession(operatorId, unitId, hmAwal, shiftType, initialStatus) {
@@ -293,43 +293,29 @@ class ApiService {
   // Get Gantt chart data for session
   async getGanttData(sessionNumber) {
     try {
-      console.log('📊 Fetching Gantt chart data for session:', sessionNumber);
-
       const result = await this.apiRequest(`/sessions/${sessionNumber}/gantt`);
 
       if (result.success) {
+        const formattedData = this.formatGanttDataForChart(result.data);
         return {
           success: true,
-          data: result.data,
-          message: 'Gantt data berhasil diambil',
+          data: formattedData,
+          message: 'Gantt data retrieved successfully',
         };
+      } else {
+        throw new Error(result.message || 'Failed to get Gantt data');
       }
-
-      return {
-        success: false,
-        message: 'Gagal mengambil data Gantt chart',
-      };
     } catch (error) {
       console.error('Get Gantt data error:', error);
-
-      let errorMessage = 'Gagal mengambil data timeline aktivitas';
-
-      if (error.message.includes('HTTP 404')) {
-        errorMessage = 'Session tidak ditemukan';
-      } else if (error.message.includes('HTTP 500')) {
-        errorMessage = 'Terjadi kesalahan pada server';
-      } else if (error.message.includes('Network')) {
-        errorMessage = 'Koneksi bermasalah. Data mungkin tidak terbaru.';
-      }
-
       return {
         success: false,
-        message: errorMessage,
+        data: null,
+        message: error.message || 'Failed to load timeline data',
       };
     }
   }
 
-  // ============ ACTIVITY METHODS (ENHANCED) ============
+  // ============ ACTIVITY METHODS ============
 
   // Save activity with category support
   async saveActivity(activityData) {
@@ -402,6 +388,55 @@ class ApiService {
         success: false,
         message: 'Get activities failed: ' + error.message,
       };
+    }
+  }
+
+  // Get current running activity
+  async getCurrentActivity(sessionNumber) {
+    try {
+      const response = await fetch(
+        `${this.baseURL}/sessions/${sessionNumber}/current-activity`,
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to get current activity');
+      }
+
+      return data;
+    } catch (error) {
+      console.error('❌ Get current activity error:', error);
+      throw error;
+    }
+  }
+
+  // End current running activity
+  async endActivity(activityId, endTime, duration) {
+    try {
+      const response = await fetch(
+        `${this.baseURL}/activities/${activityId}/end`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            datetimeEnd: endTime,
+            duration: duration,
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to end activity');
+      }
+
+      return data;
+    } catch (error) {
+      console.error('❌ End activity error:', error);
+      throw error;
     }
   }
 
@@ -574,6 +609,7 @@ class ApiService {
         timeline: [],
         timeGrid: [],
         summary: [],
+        chronologicalDetails: [],
       };
     }
 
@@ -614,6 +650,7 @@ class ApiService {
       timeline: formattedTimeline,
       timeGrid: ganttData.timeGrid || [],
       summary: formattedSummary,
+      chronologicalDetails: ganttData.chronologicalDetails || [],
     };
   }
 }
