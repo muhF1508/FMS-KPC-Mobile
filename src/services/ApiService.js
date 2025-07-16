@@ -199,7 +199,7 @@ class ApiService {
     }
   }
 
-  // ============ SESSION METHODS ============
+  // ============ SESSION METHODS (ENHANCED) ============
 
   // Create new session with shift support
   async createSession(operatorId, unitId, hmAwal, shiftType, initialStatus) {
@@ -315,7 +315,7 @@ class ApiService {
     }
   }
 
-  // ============ ACTIVITY METHODS ============
+  // ============ ACTIVITY METHODS (ENHANCED) ============
 
   // Save activity with category support
   async saveActivity(activityData) {
@@ -388,55 +388,6 @@ class ApiService {
         success: false,
         message: 'Get activities failed: ' + error.message,
       };
-    }
-  }
-
-  // Get current running activity
-  async getCurrentActivity(sessionNumber) {
-    try {
-      const response = await fetch(
-        `${this.baseURL}/sessions/${sessionNumber}/current-activity`,
-      );
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to get current activity');
-      }
-
-      return data;
-    } catch (error) {
-      console.error('❌ Get current activity error:', error);
-      throw error;
-    }
-  }
-
-  // End current running activity
-  async endActivity(activityId, endTime, duration) {
-    try {
-      const response = await fetch(
-        `${this.baseURL}/activities/${activityId}/end`,
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            datetimeEnd: endTime,
-            duration: duration,
-          }),
-        },
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to end activity');
-      }
-
-      return data;
-    } catch (error) {
-      console.error('❌ End activity error:', error);
-      throw error;
     }
   }
 

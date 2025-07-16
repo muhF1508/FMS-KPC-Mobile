@@ -110,6 +110,78 @@ const DashboardScreen = ({route, navigation}) => {
   const [showEndShiftModal, setShowEndShiftModal] = useState(false);
   const [hmAkhirShift, setHmAkhirShift] = useState('');
 
+  const parseTimerToSeconds = timeString => {
+    if (!timeString || typeof timeString !== 'string') return 0;
+
+    const parts = timeString.split(':');
+    if (parts.length === 3) {
+      const hours = parseInt(parts[0]) || 0;
+      const minutes = parseInt(parts[1]) || 0;
+      const seconds = parseInt(parts[2]) || 0;
+      return hours * 3600 + minutes * 60 + seconds;
+    }
+    return 0;
+  };
+
+  useEffect(() => {
+    if (selectedAction && currentTimer) {
+      console.log('🔄 Restoring global activity from Login...');
+      console.log(`📝 Action: ${selectedAction}, Timer: ${currentTimer}`);
+
+      const currentSeconds = parseTimerToSeconds(currentTimer);
+
+      // Calculate timer dari Login
+      const loginStartTime = new Date(Date.now() - currentSeconds * 1000);
+
+      console.log(`⏰ Calculated start time: ${loginStartTime.toISOString()}`);
+      console.log(`⏱️ Current seconds: ${currentSeconds}`);
+
+      // Set global activity state dengan data dari Login
+      setGlobalActivity({
+        isActive: true,
+        activityName: selectedAction,
+        activityCode: selectedAction,
+        sourceTab: 'initial', // Nama kategori untuk activity dari Login
+        startTime: loginStartTime,
+        duration: currentTimer,
+        seconds: currentSeconds,
+      });
+
+      // Start interval timer untuk melanjutkan timer
+      if (globalActivityRef.current) {
+        clearInterval(globalActivityRef.current);
+      }
+
+      globalActivityRef.current = setInterval(() => {
+        setGlobalActivity(prev => {
+          if (!prev.isActive) return prev;
+
+          const newSeconds = prev.seconds + 1;
+          const hours = Math.floor(newSeconds / 3600);
+          const minutes = Math.floor((newSeconds % 3600) / 60);
+          const secs = newSeconds % 60;
+          const formattedTime = `${hours.toString().padStart(2, '0')}:${minutes
+            .toString()
+            .padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+          return {
+            ...prev,
+            seconds: newSeconds,
+            duration: formattedTime,
+          };
+        });
+      }, 1000);
+
+      updateGlobalData({
+        status: selectedAction, // Update status dari Login
+      });
+
+      console.log(
+        `✅ Global activity restored: ${selectedAction} (${currentTimer})`,
+      );
+    }
+  }, [selectedAction && currentTimer]);
+
   // ============ SHIFT MANAGEMENT ============
 
   useEffect(() => {
@@ -153,6 +225,9 @@ const DashboardScreen = ({route, navigation}) => {
     );
 
     if (globalActivity.isActive) {
+      console.log(
+        `🔄 Switching from ${globalActivity.activityName} to ${activityName}`,
+      );
       await stopGlobalActivity(true);
     }
 
@@ -176,6 +251,8 @@ const DashboardScreen = ({route, navigation}) => {
 
     globalActivityRef.current = setInterval(() => {
       setGlobalActivity(prev => {
+        if (!prev.isActive) return prev;
+
         const newSeconds = prev.seconds + 1;
         const hours = Math.floor(newSeconds / 3600);
         const minutes = Math.floor((newSeconds % 3600) / 60);
@@ -192,6 +269,10 @@ const DashboardScreen = ({route, navigation}) => {
       });
     }, 1000);
 
+    updateGlobalData({
+      status: activityName,
+    });
+
     console.log(`✅ Global activity started: ${activityName}`);
   };
 
@@ -202,6 +283,9 @@ const DashboardScreen = ({route, navigation}) => {
     }
 
     console.log(`🛑 Stopping global activity: ${globalActivity.activityName}`);
+    console.log(
+      `⏱️ Duration: ${globalActivity.duration} (${globalActivity.seconds} seconds)`,
+    );
 
     if (globalActivityRef.current) {
       clearInterval(globalActivityRef.current);
@@ -229,6 +313,10 @@ const DashboardScreen = ({route, navigation}) => {
         console.log(
           `📚 Activity added to history. New count: ${newHistory.length}`,
         );
+      } else {
+        console.log(
+          `⚠️ Activity too short (${activityToSave.seconds}s), not saving to history`,
+        );
       }
     }
 
@@ -242,8 +330,13 @@ const DashboardScreen = ({route, navigation}) => {
       seconds: 0,
     });
 
-    // Enhanced auto-save with category support
-    if (autoSave && globalData.documentNumber && activityToSave.startTime) {
+    // auto-save to database jika ada documentNumber dan duration (lebih dari 5 detik)
+    if (
+      autoSave &&
+      globalData.documentNumber &&
+      activityToSave.startTime &&
+      activityToSave.seconds >= 5
+    ) {
       try {
         console.log(`💾 Auto-saving activity: ${activityToSave.activityName}`);
 
@@ -268,7 +361,16 @@ const DashboardScreen = ({route, navigation}) => {
       } catch (error) {
         console.error(`💥 Error auto-saving activity:`, error.message);
       }
+    } else if (activityToSave.seconds < 5) {
+      console.log(
+        `⚠️ Activity too short (${activityToSave.seconds}s), not saving to database`,
+      );
     }
+
+    // Update global status
+    updateGlobalData({
+      status: 'READY',
+    });
 
     console.log(
       `🏁 Global activity stopped: ${activityToSave.activityName} (Duration: ${activityToSave.duration})`,
