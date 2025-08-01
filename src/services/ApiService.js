@@ -1,9 +1,13 @@
+import sqliteService from './SQLiteService';
+
 class ApiService {
   constructor() {
+    // Standardized to one IP configuration
     // For Android Emulator, use 10.0.2.2 instead of localhost
     // For physical device, use computer's IP address (e.g., 192.168.1.100)
     this.baseURL = 'http://10.0.2.2:3000/api';
     this.healthURL = 'http://10.0.2.2:3000';
+    this.timeout = 15000; // 15 seconds
 
     // Debug URLs
     console.log('🌐 API Service initialized:');
@@ -11,77 +15,28 @@ class ApiService {
     console.log('❤️ Health URL:', this.healthURL);
   }
 
-  async apiRequest(endpoint, method = 'GET', data = null) {
+  async apiRequest(endpoint, method = 'GET', body = null) {
     try {
       const config = {
         method,
         headers: {
           'Content-Type': 'application/json',
-          Accept: 'application/json',
         },
       };
 
-      if (data && (method === 'POST' || method === 'PUT')) {
-        config.body = JSON.stringify(data);
+      if (body && method !== 'GET') {
+        config.body = JSON.stringify(body);
       }
 
-      console.log(`🌐 API Request: ${method} ${this.baseURL}${endpoint}`);
-      if (data) console.log('📤 Request Data:', data);
-
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Request timeout')), 10000),
-      );
-
-      const response = await Promise.race([
-        fetch(`${this.baseURL}${endpoint}`, config),
-        timeoutPromise,
-      ]);
+      const response = await fetch(`${this.baseURL}${endpoint}`, config);
 
       if (!response.ok) {
-        let errorMessage = `HTTP ${response.status}`;
-
-        switch (response.status) {
-          case 400:
-            errorMessage = 'Bad Request - Data tidak valid';
-            break;
-          case 401:
-            errorMessage = 'Unauthorized - Akses ditolak';
-            break;
-          case 403:
-            errorMessage = 'Forbidden - Tidak memiliki izin';
-            break;
-          case 404:
-            errorMessage = 'Not Found - Data tidak ditemukan';
-            break;
-          case 500:
-            errorMessage = 'Internal Server Error - Kesalahan server';
-            break;
-          case 503:
-            errorMessage = 'Service Unavailable - Server sedang maintenance';
-            break;
-          default:
-            errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-
-        throw new Error(errorMessage);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const result = await response.json();
-      console.log('📥 API Response', result);
-
-      return result;
+      return await response.json();
     } catch (error) {
-      console.error('🚨 API Error:', error);
-
-      // Handle network errors
-      if (error.name === 'TypeError' && error.message.includes('Network')) {
-        throw new Error('Network Error - Periksa koneksi internet Anda');
-      }
-
-      if (error.message === 'Request timeout') {
-        throw new Error('Timeout - Server tidak merespons');
-      }
-
+      console.error(`API Request failed: ${method} ${endpoint}`, error);
       throw error;
     }
   }
@@ -201,43 +156,88 @@ class ApiService {
 
   // ============ SESSION METHODS (ENHANCED) ============
 
-  // Create new session with shift support
-  async createSession(operatorId, unitId, hmAwal, shiftType, initialStatus) {
+  // Create new session with object parameter and auto shift change support
+  async createSession(sessionData) {
     try {
-      const documentNumber = this.generateDocumentNumber();
+      console.log(
+        'Creating session with SQLite offline support and auto shift change detection',
+      );
 
-      const sessionData = {
-        operatorId,
-        unitId,
-        hmAwal: parseInt(hmAwal),
-        documentNumber,
-        shiftType, // 'DAY' or 'NIGHT'
-        initialStatus, // Status dari login screen
-      };
-
-      const result = await this.apiRequest('/sessions', 'POST', sessionData);
-
-      if (result.success) {
-        return {
-          success: true,
-          session: result.data,
-          documentNumber,
-          message: 'Sesi berhasil dibuat',
+      // Handle both object parameter and individual parameters for backward compatibility
+      let enhancedData;
+      if (typeof sessionData === 'object' && sessionData.operatorId) {
+        // New object-based call from DashboardScreen
+        enhancedData = {
+          operatorId: sessionData.operatorId,
+          unitId: sessionData.unitId,
+          hmAwal: sessionData.hmAwal,
+          shiftType: sessionData.shiftType,
+          initialStatus: sessionData.initialStatus,
+        };
+      } else {
+        // Legacy individual parameters support
+        enhancedData = {
+          operatorId: arguments[0],
+          unitId: arguments[1],
+          hmAwal: arguments[2],
+          shiftType: arguments[3],
+          initialStatus: arguments[4],
         };
       }
 
-      return {
-        success: false,
-        message: 'Gagal membuat sesi. Silakan coba lagi',
-      };
-    } catch (error) {
-      console.error('Session creation error:', error);
+      const documentNumber = this.generateDocumentNumber();
+      enhancedData.documentNumber = documentNumber;
 
-      let errorMessage = 'Gagal membuat sesi kerja';
+      // Try online first
+      try {
+        const result = await this.apiRequest('/sessions', 'POST', enhancedData);
+
+        if (result.success) {
+          console.log('✅ Session created online with auto shift change data');
+          console.log(
+            `📊 Auto shift change records: ${
+              result.data.autoShiftChange?.length || 0
+            }`,
+          );
+
+          return {
+            success: true,
+            data: result.data,
+            offline: false,
+          };
+        }
+      } catch (error) {
+        console.log('📡 Online failed, saving offline...');
+      }
+
+      // Fallback to SQLite offline storage
+      const offlineResult = await sqliteService.saveOfflineSession(
+        enhancedData,
+      );
+
+      if (offlineResult.success) {
+        console.log('💾 Session saved to SQLite');
+        return {
+          success: true,
+          data: {
+            documentNumber: offlineResult.documentNumber,
+            sessionId: offlineResult.documentNumber, // Use documentNumber as sessionId for offline
+            autoShiftChange: [], // No auto shift change in offline mode
+            ...enhancedData,
+          },
+          offline: true,
+        };
+      }
+
+      throw new Error('Failed to create session online and offline');
+    } catch (error) {
+      console.error('❌ Session creation failed:', error);
+
+      // Improved error handling
+      let errorMessage = 'Failed to create session';
 
       if (error.message.includes('HTTP 400')) {
-        errorMessage =
-          'Data yang dikirim tidak lengkap. Periksa kembali form Anda.';
+        errorMessage = 'Data tidak valid. Periksa kembali form Anda.';
       } else if (error.message.includes('HTTP 500')) {
         errorMessage = 'Terjadi kesalahan pada server. Silakan coba lagi.';
       } else if (error.message.includes('duplicate')) {
@@ -252,6 +252,39 @@ class ApiService {
         success: false,
         message: errorMessage,
       };
+    }
+  }
+
+  // NEW: Method untuk fetch auto shift change
+  async getAutoShiftChange(shiftType, operatorId) {
+    try {
+      console.log(
+        `🔍 Fetching auto shift change for ${shiftType} shift, operator: ${operatorId}`,
+      );
+
+      const result = await this.apiRequest(
+        `/shifts/auto-change?shiftType=${shiftType}&operator=${operatorId}`,
+      );
+
+      if (result.success) {
+        console.log(`📊 Found ${result.data.length} auto shift change records`);
+        return result.data;
+      }
+
+      return [];
+    } catch (error) {
+      console.error('❌ Failed to fetch auto shift change:', error);
+      return [];
+    }
+  }
+
+  // NEW: Method untuk debug shift status
+  async getShiftDebugInfo() {
+    try {
+      return await this.apiRequest('/shifts/debug');
+    } catch (error) {
+      console.error('❌ Failed to get shift debug info:', error);
+      return {success: false, data: null};
     }
   }
 
@@ -288,9 +321,9 @@ class ApiService {
     }
   }
 
-  // ============ GANTT CHART METHODS (NEW) ============
+  // ============ GANTT CHART METHODS (ENHANCED) ============
 
-  // Get Gantt chart data for session
+  // Get Gantt chart data for session with auto shift change support
   async getGanttData(sessionNumber) {
     try {
       const result = await this.apiRequest(`/sessions/${sessionNumber}/gantt`);
@@ -315,70 +348,89 @@ class ApiService {
     }
   }
 
-  // ============ ACTIVITY METHODS (ENHANCED) ============
+  // ============ ACTIVITY METHODS ============
 
   // Save activity with category support
+  // 🔧 FIX: Save activity dengan timezone WITA yang benar
   async saveActivity(activityData) {
     try {
-      const {
-        activityName,
-        activityCode,
-        startTime,
-        endTime,
-        sessionNumber,
-        category,
-      } = activityData;
+      console.log('💾 Saving activity with WITA timezone fix...');
 
-      const data = {
-        codeDelay: activityCode || activityName,
-        activityName: activityName,
-        datetimeStart: new Date(startTime).toISOString(),
-        datetimeEnd: endTime
-          ? new Date(endTime).toISOString()
-          : new Date().toISOString(),
-        duration: endTime ? Math.floor((endTime - startTime) / 1000) : 0,
-        sessionNumber,
-        category: category || 'work', // default to work if not specified
+      // 🎯 Helper function untuk format datetime dengan WITA timezone
+      const formatDateTimeForWITA = date => {
+        const witaDate = new Date(date);
+        // Format sebagai WITA dengan offset +08:00
+        const year = witaDate.getFullYear();
+        const month = String(witaDate.getMonth() + 1).padStart(2, '0');
+        const day = String(witaDate.getDate()).padStart(2, '0');
+        const hours = String(witaDate.getHours()).padStart(2, '0');
+        const minutes = String(witaDate.getMinutes()).padStart(2, '0');
+        const seconds = String(witaDate.getSeconds()).padStart(2, '0');
+
+        return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+08:00`;
+      };
+
+      // Prepare data untuk API request dengan timezone yang benar
+      const apiData = {
+        codeDelay: activityData.activityCode || activityData.activityName,
+        activityName: activityData.activityName,
+        // 🔧 FIX: Format dengan WITA timezone
+        datetimeStart: formatDateTimeForWITA(new Date(activityData.startTime)),
+        datetimeEnd: activityData.endTime
+          ? formatDateTimeForWITA(new Date(activityData.endTime))
+          : formatDateTimeForWITA(new Date()),
+        duration: activityData.endTime
+          ? Math.floor((activityData.endTime - activityData.startTime) / 1000)
+          : 0,
+        sessionNumber: activityData.sessionNumber,
+        category: activityData.category || 'work',
         shift: this.getCurrentShift(),
       };
 
-      const result = await this.apiRequest('/activities', 'POST', data);
+      console.log('🕐 Activity data with WITA timezone:', {
+        start: apiData.datetimeStart,
+        end: apiData.datetimeEnd,
+        activity: apiData.activityName,
+      });
 
-      if (result.success) {
+      // Try online first
+      try {
+        const result = await this.apiRequest('/activities', 'POST', apiData);
+
+        if (result.success) {
+          console.log('✅ Activity saved online with correct timezone');
+          return {
+            success: true,
+            data: result.data,
+            offline: false,
+          };
+        }
+      } catch (error) {
+        console.log('📡 Online save failed, saving to SQLite...');
+      }
+
+      // Fallback to SQLite offline storage
+      const offlineResult = await sqliteService.saveOfflineActivity(
+        activityData,
+      );
+
+      if (offlineResult.success) {
+        console.log('💾 Activity saved to SQLite');
         return {
           success: true,
-          data: result.data,
-          message: 'Aktivitas berhasil disimpan',
+          offline: true,
         };
       }
 
-      return {
-        success: false,
-        message: 'Gagal menyimpan aktivitas. Silakan coba lagi.',
-      };
+      throw new Error('Failed to save activity online and offline');
     } catch (error) {
-      console.error('Save activity error:', error);
-
-      let errorMessage = 'Gagal menyimpan aktivitas';
-
-      if (error.message.includes('HTTP 400')) {
-        errorMessage =
-          'Data aktivitas tidak valid. Periksa kembali data yang dikirim.';
-      } else if (error.message.includes('HTTP 500')) {
-        errorMessage =
-          'Terjadi kesalahan pada server. Aktivitas tidak tersimpan.';
-      } else if (error.message.includes('Network')) {
-        errorMessage =
-          'Koneksi terputur. Aktivitas akan disimpan secara offline.';
-      }
-
+      console.error('❌ Activity save failed:', error);
       return {
         success: false,
-        message: errorMessage,
+        message: error.message || 'Failed to save activity',
       };
     }
   }
-
   // Get session activities
   async getSessionActivities(sessionNumber) {
     try {
@@ -389,6 +441,16 @@ class ApiService {
         message: 'Get activities failed: ' + error.message,
       };
     }
+  }
+
+  // ============ SYNC METHODS ======================
+
+  async getSyncStatus() {
+    return await sqliteService.getSyncStatus();
+  }
+
+  async forceSync() {
+    return await sqliteService.forceSync();
   }
 
   // ============ ACTIVITY CODES METHODS ============
@@ -421,7 +483,7 @@ class ApiService {
     return await this.getActivityCodes('work');
   }
 
-  // ============ SHIFT UTILITY METHODS (NEW) ============
+  // ============ SHIFT UTILITY METHODS ============
 
   // Get shift times based on shift type
   getShiftTimes(shiftType, date = new Date()) {
@@ -533,6 +595,25 @@ class ApiService {
     }
   }
 
+  // ENHANCED: Format duration with detailed description
+  formatDurationDetailed(seconds) {
+    if (!seconds || seconds < 0) return '0 detik';
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+
+    if (hours > 0 && minutes > 0) {
+      return `${hours} jam, ${minutes} menit`;
+    } else if (hours > 0) {
+      return `${hours} jam`;
+    } else if (minutes > 0) {
+      return `${minutes} menit`;
+    } else {
+      return `${secs} detik`;
+    }
+  }
+
   // Check if server is reachable
   async isServerReachable() {
     try {
@@ -552,9 +633,10 @@ class ApiService {
 
   // ============ CHART DATA FORMATTING ============
 
-  // Format Gantt data for chart display
+  // Format Gantt data for chart display with auto shift change support
   formatGanttDataForChart(ganttData) {
     if (!ganttData || !ganttData.timeline) {
+      console.log('❌ No gantt data or timeline found:', ganttData);
       return {
         categories: [],
         timeline: [],
@@ -564,13 +646,19 @@ class ApiService {
       };
     }
 
-    // Define category colors
+    console.log('📊 Formatting Gantt data:', {
+      timelineCount: ganttData.timeline?.length || 0,
+      summaryCount: ganttData.summary?.length || 0,
+    });
+
+    // Enhanced category colors including shift_change
     const categoryColors = {
       initial: '#00BCD4', // Cyan for initial status
       work: '#4CAF50', // Green for work
       delay: '#FF5722', // Red for delay
       idle: '#9E9E9E', // Grey for idle
       mt: '#673AB7', // Purple for maintenance
+      shift_change: '#2196F3', // Blue for auto shift change
     };
 
     // Format timeline data for chart
@@ -582,19 +670,24 @@ class ApiService {
         ? new Date(activity.endTime).getHours()
         : new Date().getHours(),
       durationMinutes: Math.round(activity.duration / 60),
+      isAutoGenerated: activity.isAutoGenerated || false,
     }));
+
+    console.log('✅ Formatted timeline activities:', formattedTimeline.length);
 
     // Format summary with colors
-    const formattedSummary = ganttData.summary.map(item => ({
-      ...item,
-      color: categoryColors[item.category] || '#2196F3',
-      percentage: 0, // Will be calculated in component
-    }));
+    const formattedSummary = ganttData.summary
+      ? ganttData.summary.map(item => ({
+          ...item,
+          color: categoryColors[item.category] || '#2196F3',
+          percentage: 0, // Will be calculated in component
+        }))
+      : [];
 
-    return {
+    const result = {
       session: ganttData.session,
       categories: Object.keys(categoryColors).map(key => ({
-        name: key.toUpperCase(),
+        name: key.toUpperCase().replace('_', ' '),
         color: categoryColors[key],
         key: key,
       })),
@@ -603,10 +696,79 @@ class ApiService {
       summary: formattedSummary,
       chronologicalDetails: ganttData.chronologicalDetails || [],
     };
+
+    console.log('📊 Final formatted data:', {
+      hasTimeline: result.timeline.length > 0,
+      hasSummary: result.summary.length > 0,
+      hasCategories: result.categories.length > 0,
+    });
+
+    return result;
+  }
+
+  // ============ AUTO SHIFT CHANGE HELPER METHODS ============
+
+  // Process auto shift change data for display
+  processAutoShiftChangeForDisplay(autoShiftChangeArray) {
+    if (!autoShiftChangeArray || autoShiftChangeArray.length === 0) {
+      return null;
+    }
+
+    const totalDuration = autoShiftChangeArray.reduce((sum, activity) => {
+      return sum + (activity.duration || 0);
+    }, 0);
+
+    const firstActivity = autoShiftChangeArray[0];
+    const lastActivity = autoShiftChangeArray[autoShiftChangeArray.length - 1];
+
+    return {
+      count: autoShiftChangeArray.length,
+      totalDuration: totalDuration,
+      totalDurationFormatted: this.formatDurationDetailed(totalDuration),
+      startTime: firstActivity.datetime_start,
+      endTime: lastActivity.datetime_end,
+      activities: autoShiftChangeArray.map(activity => ({
+        id: activity.id,
+        startTime: activity.datetime_start,
+        endTime: activity.datetime_end,
+        duration: activity.duration,
+        durationFormatted: this.formatDurationDetailed(activity.duration),
+        sessionNumber: activity.session_number,
+      })),
+    };
+  }
+
+  // Create notification message for auto shift change
+  createAutoShiftChangeNotification(autoShiftChangeData) {
+    if (!autoShiftChangeData) {
+      return null;
+    }
+
+    const {totalDurationFormatted, startTime, endTime} = autoShiftChangeData;
+
+    const startFormatted = new Date(startTime).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    const endFormatted = new Date(endTime).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    return {
+      title: 'Auto Shift Change Detected! 🕐',
+      message:
+        `SHIFT_CHANGE activity recorded:\n` +
+        `Duration: ${totalDurationFormatted}\n` +
+        `From ${startFormatted} until ${endFormatted}\n\n` +
+        `This has been automatically added to your session.`,
+    };
   }
 }
 
-// Create singleton instance
 const apiService = new ApiService();
 
 export default apiService;

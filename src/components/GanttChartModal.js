@@ -40,9 +40,12 @@ const GanttChartModal = ({
       console.log('📊 Loading Gantt data for session:', sessionNumber);
 
       const response = await apiService.getGanttData(sessionNumber);
+      console.log('📊 Raw API response:', response);
 
       if (response.success) {
+        console.log('📊 Raw data before formatting:', response.data);
         const formattedData = apiService.formatGanttDataForChart(response.data);
+        console.log('📊 Formatted data:', formattedData);
         setGanttData(formattedData);
         console.log('✅ Gantt data loaded successfully');
       } else {

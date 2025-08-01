@@ -16,14 +16,15 @@ import WorkContent from '../../components/WorkContent';
 import DelayContent from '../../components/DelayContent';
 import IdleContent from '../../components/IdleContent';
 import MTContent from '../../components/MTContent';
-import GanttChartModal from '../../components/GanttChartModal'; // NEW: Replace ActivityHistoryModal
+import GanttChartModal from '../../components/GanttChartModal';
 
 // Import services
 import apiService from '../../services/ApiService';
 import ActivityHistoryService from '../../services/ActivityHistoryService';
+import sqliteService from '../../services/SQLiteService';
 
 const DashboardScreen = ({route, navigation}) => {
-  // Enhanced data dari LoginScreen
+  // data dari LoginScreen
   const {
     employee,
     sessionData,
@@ -41,7 +42,7 @@ const DashboardScreen = ({route, navigation}) => {
   const [sessionCreated, setSessionCreated] = useState(false);
   const [isEndingShift, setIsEndingShift] = useState(false);
 
-  // NEW: Gantt chart modal state
+  // Gantt chart modal state
   const [showGanttModal, setShowGanttModal] = useState(false);
   const [historyCount, setHistoryCount] = useState(0);
 
@@ -105,6 +106,13 @@ const DashboardScreen = ({route, navigation}) => {
     time: '',
   });
 
+  // Sync status state
+  const [syncStatus, setSyncStatus] = useState({
+    isOnline: false,
+    isSyncing: false,
+    pendingSync: 0,
+  });
+
   // Modal states
   const [showHmAwalModal, setShowHmAwalModal] = useState(true);
   const [showEndShiftModal, setShowEndShiftModal] = useState(false);
@@ -123,6 +131,32 @@ const DashboardScreen = ({route, navigation}) => {
     return 0;
   };
 
+  useEffect(() => {
+    const initializeSQLite = async () => {
+      try {
+        await sqliteService.initialize();
+        console.log('✅ SQLite initialized successfully in Dashboard');
+      } catch (error) {
+        console.error('❌ Failed to initialize SQLite:', error);
+      }
+    };
+
+    const updateSyncStatus = async () => {
+      const status = await sqliteService.getSyncStatus();
+      setSyncStatus(status);
+    };
+
+    // Initialize
+    initializeSQLite();
+    updateSyncStatus();
+
+    // Update sync status every 30 seconds
+    const syncInterval = setInterval(updateSyncStatus, 30000);
+
+    return () => clearInterval(syncInterval);
+  }, []);
+
+  // FIX: Separate dependencies instead of boolean expression
   useEffect(() => {
     if (selectedAction && currentTimer) {
       console.log('🔄 Restoring global activity from Login...');
@@ -180,7 +214,7 @@ const DashboardScreen = ({route, navigation}) => {
         `✅ Global activity restored: ${selectedAction} (${currentTimer})`,
       );
     }
-  }, [selectedAction && currentTimer]);
+  }, [selectedAction, currentTimer]); // FIX: Separated dependencies
 
   // ============ SHIFT MANAGEMENT ============
 
@@ -401,20 +435,16 @@ const DashboardScreen = ({route, navigation}) => {
       setSessionTimer(formattedTime);
     }, 1000);
 
+    // FIX: Proper cleanup
     return () => {
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
       }
-    };
-  }, []);
-
-  useEffect(() => {
-    return () => {
       if (globalActivityRef.current) {
         clearInterval(globalActivityRef.current);
       }
     };
-  }, []);
+  }, [currentTimer]); // Added dependency
 
   const formatSessionTime = totalSeconds => {
     const hours = Math.floor(totalSeconds / 3600);
@@ -487,25 +517,24 @@ const DashboardScreen = ({route, navigation}) => {
     try {
       console.log('🔄 Creating enhanced session with HM Awal:', hmValue);
 
-      // Enhanced session creation with shift type and initial status
-      const response = await apiService.createSession(
-        globalData.sessionData.operatorId,
-        globalData.sessionData.unitId,
-        hmValue,
-        globalData.shiftType, // Pass shift type
-        globalData.sessionData.initialStatus, // Pass initial status
-      );
+      // FIX: Use object parameter to match ApiService method signature
+      const sessionData = {
+        operatorId: globalData.sessionData.operatorId,
+        unitId: globalData.sessionData.unitId,
+        hmAwal: hmValue,
+        shiftType: globalData.shiftType,
+        initialStatus: globalData.sessionData.initialStatus,
+      };
+
+      const response = await apiService.createSession(sessionData);
 
       if (response.success) {
-        console.log(
-          '✅ Enhanced session created successfully:',
-          response.session,
-        );
+        console.log('✅ Enhanced session created successfully:', response.data);
 
         updateGlobalData({
           isHmAwalSet: true,
-          sessionId: response.session.sessionId,
-          documentNumber: response.documentNumber,
+          sessionId: response.data.sessionId || response.data.id,
+          documentNumber: response.data.documentNumber,
         });
 
         setSessionCreated(true);
@@ -514,7 +543,7 @@ const DashboardScreen = ({route, navigation}) => {
         Alert.alert(
           'Success',
           `Session berhasil dibuat!\n` +
-            `Document Number: ${response.documentNumber}\n` +
+            `Document Number: ${response.data.documentNumber}\n` +
             `HM Awal: ${hmValue}\n` +
             `Shift: ${globalData.shiftLabel} (${globalData.shiftTime})`,
         );
@@ -770,6 +799,16 @@ const DashboardScreen = ({route, navigation}) => {
             {globalData.sessionId &&
               ` | Session: ${globalData.sessionId.toString().slice(-6)}`}
             {!sessionCreated && ' | ⚠️ Creating...'}
+          </Text>
+          {/* Sync Status Indicator */}
+          <Text
+            style={[
+              styles.syncStatusText,
+              {color: syncStatus.isOnline ? '#4CAF50' : '#F44336'},
+            ]}>
+            {syncStatus.isOnline ? '✅ Online' : '📡 Offline'}
+            {syncStatus.pendingSync > 0 &&
+              ` | 📤 ${syncStatus.pendingSync} pending`}
           </Text>
         </View>
       </View>
@@ -1075,6 +1114,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#333',
     fontWeight: '500',
+  },
+  syncStatusText: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 2,
   },
   leftColumn: {
     flex: 1,
