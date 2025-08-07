@@ -9,6 +9,9 @@ class ApiService {
     this.healthURL = 'http://10.0.2.2:3000';
     this.timeout = 15000; // 15 seconds
 
+    // Request deduplication to prevent duplicate API calls
+    this.pendingRequests = new Map();
+
     // Debug URLs
     console.log('🌐 API Service initialized:');
     console.log('📡 Base URL:', this.baseURL);
@@ -356,6 +359,35 @@ class ApiService {
     try {
       console.log('💾 Saving activity with WITA timezone fix...');
 
+      // 🚫 Request deduplication - prevent duplicate API calls
+      const requestKey = `${activityData.sessionNumber}-${activityData.activityName}-${activityData.startTime}`;
+      
+      if (this.pendingRequests.has(requestKey)) {
+        console.log(`🚫 Duplicate saveActivity request blocked: ${activityData.activityName}`);
+        return this.pendingRequests.get(requestKey);
+      }
+
+      // Create promise and add to pending requests
+      const requestPromise = this._executeSaveActivity(activityData);
+      this.pendingRequests.set(requestKey, requestPromise);
+
+      // Clean up after completion
+      requestPromise.finally(() => {
+        this.pendingRequests.delete(requestKey);
+      });
+
+      return requestPromise;
+    } catch (error) {
+      console.error('💥 Save Activity error:', error.message);
+      return {
+        success: false,
+        message: error.message,
+      };
+    }
+  }
+
+  async _executeSaveActivity(activityData) {
+    try {
       // 🎯 Helper function untuk format datetime dengan WITA timezone
       const formatDateTimeForWITA = date => {
         const witaDate = new Date(date);
@@ -513,46 +545,51 @@ class ApiService {
 
   // Check if current time is within shift
   isWithinShift(shiftType, currentTime = new Date()) {
-    const {startTime, endTime} = this.getShiftTimes(shiftType, currentTime);
-
     if (shiftType === 'DAY') {
-      return currentTime >= startTime && currentTime <= endTime;
+      // Day shift: 06:00 - 18:00
+      const currentHour = currentTime.getHours();
+      return currentHour >= 6 && currentHour <= 18;
     } else {
-      // Night shift spans two days
-      return currentTime >= startTime || currentTime <= endTime;
+      // Night shift: 18:00 - 06:00 (crosses midnight)
+      // Valid hours: 18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6
+      const currentHour = currentTime.getHours();
+      return currentHour >= 18 || currentHour <= 6;
     }
   }
 
   // Get time progress within shift (0-100%)
   getShiftProgress(shiftType, currentTime = new Date()) {
-    const {startTime, endTime} = this.getShiftTimes(shiftType, currentTime);
-
-    const totalDuration = endTime.getTime() - startTime.getTime();
-    let elapsed;
-
-    if (shiftType === 'DAY') {
-      elapsed = currentTime.getTime() - startTime.getTime();
-    } else {
-      // Handle night shift crossing midnight
-      if (currentTime >= startTime) {
-        elapsed = currentTime.getTime() - startTime.getTime();
-      } else {
-        // Next day
-        const midnight = new Date(startTime);
-        midnight.setDate(midnight.getDate() + 1);
-        midnight.setHours(0, 0, 0, 0);
-        elapsed =
-          midnight.getTime() -
-          startTime.getTime() +
-          (currentTime.getTime() - (midnight.getTime() - 24 * 60 * 60 * 1000));
-      }
+    if (!this.isWithinShift(shiftType, currentTime)) {
+      return 0; // Return 0% if outside shift hours
     }
 
-    const progress = Math.max(
-      0,
-      Math.min(100, (elapsed / totalDuration) * 100),
-    );
-    return Math.round(progress);
+    const currentHour = currentTime.getHours();
+    const currentMinute = currentTime.getMinutes();
+    
+    if (shiftType === 'DAY') {
+      // Day shift: 06:00 - 18:00 (12 hours)
+      const totalMinutes = 12 * 60; // 720 minutes
+      const elapsedMinutes = (currentHour - 6) * 60 + currentMinute;
+      const progress = Math.max(0, Math.min(100, (elapsedMinutes / totalMinutes) * 100));
+      
+      return Math.round(progress);
+    } else {
+      // Night shift: 18:00 - 06:00 (12 hours)
+      const totalMinutes = 12 * 60; // 720 minutes
+      let elapsedMinutes;
+      
+      if (currentHour >= 18) {
+        // Same day (18:00 - 23:59)
+        elapsedMinutes = (currentHour - 18) * 60 + currentMinute;
+      } else {
+        // Next day (00:00 - 06:00)
+        elapsedMinutes = (6 * 60) + (currentHour * 60) + currentMinute;
+      }
+      
+      const progress = Math.max(0, Math.min(100, (elapsedMinutes / totalMinutes) * 100));
+      
+      return Math.round(progress);
+    }
   }
 
   // ============ UTILITY METHODS ============

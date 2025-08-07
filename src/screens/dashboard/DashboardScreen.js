@@ -10,6 +10,7 @@ import {
   Modal,
   ActivityIndicator,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 // Import content components
 import WorkContent from '../../components/WorkContent';
@@ -60,6 +61,7 @@ const DashboardScreen = ({route, navigation}) => {
     startTime: null,
     duration: '00:00:00',
     seconds: 0,
+    isSaved: false, // Flag to prevent double save
   });
 
   const globalActivityRef = useRef(null);
@@ -279,6 +281,7 @@ const DashboardScreen = ({route, navigation}) => {
       startTime,
       duration: '00:00:00',
       seconds: 0,
+      isSaved: false, // Reset save flag for new activity
     };
 
     setGlobalActivity(newActivity);
@@ -369,7 +372,8 @@ const DashboardScreen = ({route, navigation}) => {
       autoSave &&
       globalData.documentNumber &&
       activityToSave.startTime &&
-      activityToSave.seconds >= 5
+      activityToSave.seconds >= 5 &&
+      !activityToSave.isSaved // Prevent double save
     ) {
       try {
         console.log(`💾 Auto-saving activity: ${activityToSave.activityName}`);
@@ -386,6 +390,8 @@ const DashboardScreen = ({route, navigation}) => {
         const response = await apiService.saveActivity(activityData);
 
         if (response.success) {
+          // Mark as saved to prevent duplicate
+          setGlobalActivity(prev => ({...prev, isSaved: true}));
           console.log(
             `✅ Activity ${activityToSave.activityName} auto-saved successfully`,
           );
@@ -398,6 +404,10 @@ const DashboardScreen = ({route, navigation}) => {
     } else if (activityToSave.seconds < 5) {
       console.log(
         `⚠️ Activity too short (${activityToSave.seconds}s), not saving to database`,
+      );
+    } else if (activityToSave.isSaved) {
+      console.log(
+        `⚠️ Activity ${activityToSave.activityName} already saved, skipping duplicate save`,
       );
     }
 
@@ -644,20 +654,20 @@ const DashboardScreen = ({route, navigation}) => {
       setShowEndShiftModal(false);
 
       Alert.alert(
-        'Shift Selesai! 🎉',
+        'Shift Selesai!',
         `Ringkasan ${globalData.shiftLabel}:\n\n` +
-          `👤 Operator: ${
+          `Operator: ${
             globalData.employee?.NAME || globalData.welcomeId
           }\n` +
-          `🚛 Unit: ${globalData.formData?.unitNumber}\n` +
-          `🕐 Shift: ${globalData.shiftLabel} (${globalData.shiftTime})\n` +
-          `⏰ Durasi: ${sessionDuration}\n` +
-          `📏 HM Awal: ${globalData.hmAwal}\n` +
-          `📏 HM Akhir: ${hmValue}\n` +
-          `📊 Total HM: ${hmDifference} HM\n` +
-          `📦 Total Loads: ${globalData.workData.loads}\n` +
-          `🏆 Productivity: ${globalData.workData.productivity}\n` +
-          `📚 Activities Logged: ${historyCount}`,
+          `Unit: ${globalData.formData?.unitNumber}\n` +
+          `Shift: ${globalData.shiftLabel} (${globalData.shiftTime})\n` +
+          `Durasi: ${sessionDuration}\n` +
+          `HM Awal: ${globalData.hmAwal}\n` +
+          `HM Akhir: ${hmValue}\n` +
+          `Total HM: ${hmDifference} HM\n` +
+          `Total Loads: ${globalData.workData.loads}\n` +
+          `Productivity: ${globalData.workData.productivity}\n` +
+          `Activities Logged: ${historyCount}`,
         [
           {
             text: 'Selesai',
@@ -736,25 +746,24 @@ const DashboardScreen = ({route, navigation}) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Enhanced Header Section with Shift Info */}
+      {/* Mining Dashboard Header */}
       <View style={styles.headerSection}>
         {/* Top Row */}
-        <View style={styles.topRow}>
-          <View style={styles.leftColumn}>
-            <Text style={styles.welcomeLabel}>Welcome :</Text>
-            <Text style={styles.welcomeValue}>{globalData.welcomeName}</Text>
-            <Text style={styles.shiftValue}>{globalData.shiftLabel}</Text>
-          </View>
-
-          <View style={styles.centerColumn}>
-            <Text style={styles.productivityLabel}>Productivity :</Text>
-            <Text style={styles.productivityValue}>
-              {globalData.workData.productivity}
+        <View style={styles.headerTopRow}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.welcomeText}>
+              Welcome : {globalData.welcomeId} / Shift {globalData.shiftType === 'DAY' ? 'Day' : 'Night'}
             </Text>
           </View>
-
-          <View style={styles.rightColumn}>
-            <Text style={styles.statusLabel}>Status :</Text>
+          
+          <View style={styles.headerCenter}>
+            <Text style={styles.productivityText}>
+              Productivity : {globalData.workData.productivity}
+            </Text>
+          </View>
+          
+          <View style={styles.headerRight}>
+            <Text style={styles.statusLabel}>Status : </Text>
             <Text
               style={[
                 styles.statusValue,
@@ -766,50 +775,22 @@ const DashboardScreen = ({route, navigation}) => {
         </View>
 
         {/* Bottom Row */}
-        <View style={styles.bottomRow}>
-          <View style={styles.leftColumn}>
-            <Text style={styles.infoText}>
-              Unit: {globalData.formData?.unitNumber || 'N/A'}
-            </Text>
-            <Text style={styles.infoText}>
-              {globalData.hmAwal || '0'} Hm Awal
+        <View style={styles.headerBottomRow}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.unitText}>
+              {globalData.formData?.unitNumber || 'N/A'} | HM Awal : {globalData.hmAwal || '0'}
             </Text>
           </View>
-
-          <View style={styles.centerColumn}>
-            <Text style={styles.infoText}>
-              {globalData.workData.loads} Load(s) | {globalData.workData.hours}{' '}
-              hour(s)
-            </Text>
-            <Text style={styles.infoText}>
-              {currentDateTime.date} {currentDateTime.time}
+          
+          <View style={styles.headerCenter}>
+            <Text style={styles.loadsText}>
+              {globalData.workData.loads} Load(s) | {globalData.workData.hours || '0.0'} hour(s) | {currentDateTime.date} {currentDateTime.time}
             </Text>
           </View>
-
-          <View style={styles.rightColumn}>
+          
+          <View style={styles.headerRight}>
             <Text style={styles.timerText}>{sessionTimer}</Text>
           </View>
-        </View>
-
-        {/* Enhanced Session Info Row */}
-        <View style={styles.sessionInfoRow}>
-          <Text style={styles.sessionInfoText}>
-            🕐 {globalData.shiftTime} | Doc:{' '}
-            {globalData.documentNumber || 'N/A'}
-            {globalData.sessionId &&
-              ` | Session: ${globalData.sessionId.toString().slice(-6)}`}
-            {!sessionCreated && ' | ⚠️ Creating...'}
-          </Text>
-          {/* Sync Status Indicator */}
-          <Text
-            style={[
-              styles.syncStatusText,
-              {color: syncStatus.isOnline ? '#4CAF50' : '#F44336'},
-            ]}>
-            {syncStatus.isOnline ? '✅ Online' : '📡 Offline'}
-            {syncStatus.pendingSync > 0 &&
-              ` | 📤 ${syncStatus.pendingSync} pending`}
-          </Text>
         </View>
       </View>
 
@@ -836,9 +817,16 @@ const DashboardScreen = ({route, navigation}) => {
                 <Text style={styles.employeeInfoText}>
                   Unit: {globalData.formData?.unitNumber}
                 </Text>
-                <Text style={styles.employeeInfoText}>
-                  🕐 {globalData.shiftLabel}: {globalData.shiftTime}
-                </Text>
+                <View style={styles.employeeShiftInfo}>
+                  <Icon 
+                    name={globalData.shiftType === 'DAY' ? 'weather-sunny' : 'weather-night'}
+                    size={12} 
+                    color={globalData.shiftType === 'DAY' ? '#FF9800' : '#3F51B5'}
+                  />
+                  <Text style={styles.employeeInfoText}>
+                    {globalData.shiftLabel}: {globalData.shiftTime}
+                  </Text>
+                </View>
               </View>
             )}
 
@@ -887,18 +875,24 @@ const DashboardScreen = ({route, navigation}) => {
             </Text>
 
             <View style={styles.sessionSummary}>
-              <Text style={styles.summaryTitle}>
-                📊 Ringkasan {globalData.shiftLabel}
-              </Text>
+              <View style={styles.summaryTitleContainer}>
+                <Icon name="chart-bar" size={16} color="#333" />
+                <Text style={styles.summaryTitle}>
+                  Ringkasan {globalData.shiftLabel}
+                </Text>
+              </View>
               <Text style={styles.summaryText}>
                 Operator: {globalData.employee?.NAME || globalData.welcomeId}
               </Text>
               <Text style={styles.summaryText}>
                 Unit: {globalData.formData?.unitNumber}
               </Text>
-              <Text style={styles.summaryText}>
-                🕐 Shift: {globalData.shiftTime}
-              </Text>
+              <View style={styles.summaryItemContainer}>
+                <Icon name="clock" size={12} color="#666" />
+                <Text style={styles.summaryText}>
+                  Shift: {globalData.shiftTime}
+                </Text>
+              </View>
               <Text style={styles.summaryText}>
                 HM Awal: {globalData.hmAwal}
               </Text>
@@ -969,7 +963,10 @@ const DashboardScreen = ({route, navigation}) => {
       {globalActivity.isActive && (
         <View style={styles.globalActivityBanner}>
           <View style={styles.globalActivityContent}>
-            <Text style={styles.globalActivityLabel}>🟢 Active:</Text>
+            <View style={styles.globalActivityLabelContainer}>
+              <Icon name="record-circle" size={12} color="#4CAF50" />
+              <Text style={styles.globalActivityLabel}>Active:</Text>
+            </View>
             <Text style={styles.globalActivityText} numberOfLines={1}>
               {globalActivity.activityName}
             </Text>
@@ -977,11 +974,6 @@ const DashboardScreen = ({route, navigation}) => {
               {globalActivity.duration}
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.globalActivityStopButton}
-            onPress={() => stopGlobalActivity(true)}>
-            <Text style={styles.globalActivityStopText}>STOP</Text>
-          </TouchableOpacity>
         </View>
       )}
 
@@ -990,7 +982,11 @@ const DashboardScreen = ({route, navigation}) => {
         style={styles.fabGantt}
         onPress={() => setShowGanttModal(true)}
         activeOpacity={0.8}>
-        <Text style={styles.fabIcon}>📊</Text>
+        <Icon 
+          name="chart-gantt" 
+          size={24} 
+          color="#fff" 
+        />
         {historyCount > 0 && (
           <View style={styles.fabBadge}>
             <Text style={styles.fabBadgeText}>
@@ -1009,7 +1005,11 @@ const DashboardScreen = ({route, navigation}) => {
           ]}
           onPress={() => handleTabNavigation('WORK')}>
           <View style={styles.navIcon}>
-            <Text style={styles.navIconText}>⚙️</Text>
+            <Icon 
+              name="cog" 
+              size={22} 
+              color={activeTab === 'work' ? '#4CAF50' : '#999'} 
+            />
           </View>
           <Text
             style={[
@@ -1027,7 +1027,11 @@ const DashboardScreen = ({route, navigation}) => {
           ]}
           onPress={() => handleTabNavigation('DELAY')}>
           <View style={styles.navIcon}>
-            <Text style={styles.navIconText}>⏱️</Text>
+            <Icon 
+              name="clock-alert" 
+              size={22} 
+              color={activeTab === 'delay' ? '#FF5722' : '#999'} 
+            />
           </View>
           <Text
             style={[
@@ -1045,7 +1049,11 @@ const DashboardScreen = ({route, navigation}) => {
           ]}
           onPress={() => handleTabNavigation('IDLE')}>
           <View style={styles.navIcon}>
-            <Text style={styles.navIconText}>⏸️</Text>
+            <Icon 
+              name="pause-circle" 
+              size={22} 
+              color={activeTab === 'idle' ? '#9E9E9E' : '#999'} 
+            />
           </View>
           <Text
             style={[
@@ -1063,7 +1071,11 @@ const DashboardScreen = ({route, navigation}) => {
           ]}
           onPress={() => handleTabNavigation('MT')}>
           <View style={styles.navIcon}>
-            <Text style={styles.navIconText}>📋</Text>
+            <Icon 
+              name="tools" 
+              size={22} 
+              color={activeTab === 'mt' ? '#673AB7' : '#999'} 
+            />
           </View>
           <Text
             style={[
@@ -1092,33 +1104,112 @@ const styles = StyleSheet.create({
   headerSection: {
     backgroundColor: '#FFD700',
     padding: 15,
-    paddingTop: 25,
+    paddingTop: 20,
   },
-  topRow: {
+  headerTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 8,
   },
-  bottomRow: {
+  headerBottomRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerLeft: {
+    flex: 1,
     alignItems: 'flex-start',
-    marginBottom: 5,
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  headerRight: {
+    flex: 1,
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  welcomeText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  productivityText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  statusLabel: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  statusValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  unitText: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500',
+  },
+  loadsText: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500',
   },
   sessionInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 5,
+  },
+  sessionInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  sessionInfoIcon: {
+    marginRight: 4,
   },
   sessionInfoText: {
     fontSize: 12,
     color: '#333',
     fontWeight: '500',
   },
+  creatingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  creatingText: {
+    fontSize: 10,
+    color: '#FF9800',
+    fontWeight: '500',
+    marginLeft: 2,
+  },
+  syncStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  syncIcon: {
+    marginRight: 4,
+  },
   syncStatusText: {
     fontSize: 10,
     fontWeight: '600',
-    marginTop: 2,
+  },
+  pendingSync: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  pendingSyncText: {
+    fontSize: 9,
+    color: '#FF9800',
+    marginLeft: 2,
   },
   leftColumn: {
     flex: 1,
@@ -1219,6 +1310,12 @@ const styles = StyleSheet.create({
     color: '#2E7D32',
     fontWeight: 'bold',
     textAlign: 'center',
+    marginLeft: 4,
+  },
+  employeeShiftInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalInput: {
     width: '100%',
@@ -1240,17 +1337,27 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: '#2196F3',
   },
+  summaryTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
   summaryTitle: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 10,
-    textAlign: 'center',
+    marginLeft: 6,
+  },
+  summaryItemContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 3,
   },
   summaryText: {
     fontSize: 13,
     color: '#666',
-    marginBottom: 3,
+    marginLeft: 6,
   },
   modalButtons: {
     flexDirection: 'row',
@@ -1376,11 +1483,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  globalActivityLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+  },
   globalActivityLabel: {
     fontSize: 12,
     fontWeight: 'bold',
     color: '#2E7D32',
-    marginRight: 8,
+    marginLeft: 4,
   },
   globalActivityText: {
     fontSize: 12,
@@ -1396,42 +1508,40 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     marginRight: 8,
   },
-  globalActivityStopButton: {
-    backgroundColor: '#F44336',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 4,
-  },
-  globalActivityStopText: {
-    color: 'white',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
   // Bottom navigation
   bottomNavigation: {
     flexDirection: 'row',
     backgroundColor: 'white',
-    paddingVertical: 10,
-    paddingHorizontal: 5,
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderTopWidth: 0,
+    borderTopColor: 'transparent',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: -2,
+      height: -4,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 5,
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
   navButton: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginHorizontal: 2,
   },
   activeNavButton: {
     backgroundColor: '#E3F2FD',
-    borderRadius: 8,
+    borderRadius: 12,
+    shadowColor: '#2196F3',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   navIcon: {
     width: 30,
@@ -1453,12 +1563,17 @@ const styles = StyleSheet.create({
   },
   akhirShiftButton: {
     backgroundColor: '#F44336',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 5,
+    marginLeft: 6,
+    shadowColor: '#F44336',
+    shadowOffset: {width: 0, height: 3},
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
   },
   akhirShiftText: {
     color: 'white',

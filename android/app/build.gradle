@@ -117,3 +117,5 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+// React Native Vector Icons configured manually

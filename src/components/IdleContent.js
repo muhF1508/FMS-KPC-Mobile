@@ -8,6 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const IdleContent = ({
   globalData,
@@ -107,21 +108,20 @@ const IdleContent = ({
     const activity = idleActivities.find(act => act.code === activityCode);
     if (!activity) return;
 
+    // Prevent selecting the same activity that's already running
+    if (isActivityActive(activityCode)) {
+      return; // Do nothing if same activity is already active
+    }
+
     setIsLoading(true);
 
     try {
-      // Check if this activity is already running
-      if (isActivityActive(activityCode)) {
-        // Stop the current activity (silent)
-        await globalData.stopGlobalActivity(true);
-      } else {
-        // Start new activity (silent switch)
-        await globalData.startGlobalActivity(
-          activity.name,
-          activityCode,
-          'idle',
-        );
-      }
+      // Always start new activity (will auto-switch from previous)
+      await globalData.startGlobalActivity(
+        activity.name,
+        activityCode,
+        'idle',
+      );
     } catch (error) {
       console.error('Error handling activity:', error);
       Alert.alert('Error', 'Gagal memproses aktivitas');
@@ -130,24 +130,6 @@ const IdleContent = ({
     }
   };
 
-  const resetAllActivities = () => {
-    Alert.alert(
-      'Konfirmasi Reset',
-      'Apakah Anda yakin ingin mereset semua data idle?',
-      [
-        {text: 'Batal', style: 'cancel'},
-        {
-          text: 'Ya',
-          onPress: async () => {
-            if (isIdleActivityActive()) {
-              await globalData.stopGlobalActivity(true);
-            }
-            Alert.alert('Success', 'Data idle telah direset');
-          },
-        },
-      ],
-    );
-  };
 
   const isActivityActive = activityCode => {
     return (
@@ -174,8 +156,9 @@ const IdleContent = ({
     if (!globalData.documentNumber) {
       return (
         <View style={styles.offlineIndicator}>
+          <Icon name="wifi-off" size={14} color="#FF9800" style={styles.offlineIcon} />
           <Text style={styles.offlineText}>
-            📡 Offline Mode - Data tersimpan lokal
+            Offline Mode - Data tersimpan lokal
           </Text>
         </View>
       );
@@ -198,25 +181,30 @@ const IdleContent = ({
         </View>
       )}
 
-      {/* Status Display */}
-      {isIdleActivityActive() && (
-        <View style={styles.statusContainer}>
-          <Text style={styles.statusTitle}>Status Aktivitas Aktif:</Text>
-          <Text style={styles.statusText}>
-            ⏸️ {globalData.globalActivity.activityName} (
-            {globalData.globalActivity.activityCode})
+      {/* Information */}
+      <View style={styles.sessionContainer}>
+        <View style={styles.sessionTitleContainer}>
+          <Icon name="information" size={18} color="#2196F3" />
+          <Text style={styles.sessionTitle}>Informasi Idle Activities</Text>
+        </View>
+        <View style={styles.sessionInfo}>
+          <Text style={styles.sessionText}>
+            • Gunakan saat operasional terhenti sementara
           </Text>
-          <Text style={styles.statusTime}>
-            Durasi: {globalData.globalActivity.duration}
+          <Text style={styles.sessionText}>
+            • Aktivitas dikelompokkan berdasarkan kategori
+          </Text>
+          <Text style={styles.sessionText}>
+            • Sistem tracking otomatis untuk analisis downtime
           </Text>
         </View>
-      )}
+      </View>
 
       {/* Activity Buttons - LAYOUT 3 KOLOM */}
       <View style={styles.activitiesContainer}>
         <Text style={styles.sectionTitle}>Pilih Aktivitas Idle:</Text>
         <Text style={styles.instructionText}>
-          Tap sekali untuk mulai, tap lagi untuk berhenti
+          Pilih aktivitas idle yang sesuai dengan kondisi operasional
         </Text>
 
         {groupedActivities.map((row, rowIndex) => (
@@ -269,43 +257,6 @@ const IdleContent = ({
         ))}
       </View>
 
-      {/* Control Buttons */}
-      <View style={styles.controlsContainer}>
-        {isIdleActivityActive() && (
-          <TouchableOpacity
-            style={[styles.stopButton, isLoading && styles.disabledButton]}
-            onPress={() => globalData.stopGlobalActivity(true)}
-            disabled={isLoading}>
-            <Text style={styles.controlButtonText}>
-              {isLoading ? 'Saving...' : 'Stop Current Activity'}
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        <TouchableOpacity
-          style={[styles.resetButton, isLoading && styles.disabledButton]}
-          onPress={resetAllActivities}
-          disabled={isLoading}>
-          <Text style={styles.resetButtonText}>Reset All Data</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Information */}
-      <View style={styles.infoContainer}>
-        <Text style={styles.infoTitle}>Informasi Idle Activities</Text>
-        <Text style={styles.infoText}>
-          • Hanya satu aktivitas yang dapat berjalan pada satu waktu
-        </Text>
-        <Text style={styles.infoText}>
-          • Aktivitas akan otomatis tersimpan ke database
-        </Text>
-        <Text style={styles.infoText}>
-          • Timer berjalan global di seluruh aplikasi
-        </Text>
-        <Text style={styles.infoText}>
-          • Total {idleActivities.length} jenis aktivitas idle tersedia
-        </Text>
-      </View>
     </ScrollView>
   );
 };
@@ -330,6 +281,12 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     borderLeftWidth: 4,
     borderLeftColor: '#FF9800',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  offlineIcon: {
+    marginRight: 6,
   },
   offlineText: {
     fontSize: 12,
@@ -466,48 +423,39 @@ const styles = StyleSheet.create({
   controlsContainer: {
     marginBottom: 20,
   },
-  stopButton: {
-    backgroundColor: '#F44336',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  resetButton: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
   controlButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
   },
-  resetButtonText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  infoContainer: {
+  sessionContainer: {
     backgroundColor: 'white',
     padding: 15,
     borderRadius: 12,
+    marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
-  infoTitle: {
+  sessionTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  sessionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 10,
+    marginLeft: 8,
   },
-  infoText: {
+  sessionInfo: {
+    backgroundColor: '#f9f9f9',
+    padding: 10,
+    borderRadius: 8,
+  },
+  sessionText: {
     fontSize: 14,
     color: '#666',
     marginBottom: 5,

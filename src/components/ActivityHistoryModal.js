@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import ActivityHistoryService from '../services/ActivityHistoryService';
 
 const ActivityHistoryModal = ({
@@ -195,7 +196,7 @@ const ActivityHistoryModal = ({
         <View style={styles.rightSection}>
           <Text style={styles.activityDuration}>{item.duration}</Text>
           <View style={styles.repeatButton}>
-            <Text style={styles.repeatIcon}>🔄</Text>
+            <Icon name="refresh" size={16} color="#2196F3" />
           </View>
         </View>
       </TouchableOpacity>
@@ -204,7 +205,7 @@ const ActivityHistoryModal = ({
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Text style={styles.emptyIcon}>📝</Text>
+      <Icon name="clipboard-text-outline" size={48} color="#999" />
       <Text style={styles.emptyTitle}>No Activities Yet</Text>
       <Text style={styles.emptyText}>
         Start your first activity to see it here
@@ -246,19 +247,19 @@ const ActivityHistoryModal = ({
           {/* Header */}
           <View style={styles.header}>
             <View>
-              <Text style={styles.title}>📚 Activity History</Text>
+              <Text style={styles.title}><Icon name="history" size={20} color="#333" /> Activity History</Text>
               <Text style={styles.subtitle}>
                 {operatorName} • {new Date().toLocaleDateString('id-ID')}
               </Text>
             </View>
             <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-              <Text style={styles.closeText}>✕</Text>
+              <Icon name="close" size={18} color="#666" />
             </TouchableOpacity>
           </View>
 
           {/* Statistics Dashboard */}
           <View style={styles.statsContainer}>
-            <Text style={styles.statsTitle}>📊 Today's Summary</Text>
+            <Text style={styles.statsTitle}><Icon name="chart-bar" size={16} color="#333" /> Today's Summary</Text>
 
             <View style={styles.statsGrid}>
               <View style={styles.statCard}>
@@ -327,7 +328,7 @@ const ActivityHistoryModal = ({
               ]}
               onPress={repeatLastActivity}
               disabled={activityHistory.length === 0}>
-              <Text style={styles.actionIcon}>🔄</Text>
+              <Icon name="refresh" size={16} color="white" />
               <Text style={styles.actionText}>Repeat Last</Text>
             </TouchableOpacity>
 
@@ -339,7 +340,7 @@ const ActivityHistoryModal = ({
               ]}
               onPress={handleClearHistory}
               disabled={activityHistory.length === 0}>
-              <Text style={styles.actionIcon}>🗑️</Text>
+              <Icon name="delete" size={16} color="white" />
               <Text style={styles.clearText}>Clear Today</Text>
             </TouchableOpacity>
           </View>

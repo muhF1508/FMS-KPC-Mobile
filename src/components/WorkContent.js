@@ -8,6 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const WorkContent = ({
   globalData,
@@ -15,8 +16,6 @@ const WorkContent = ({
   setActiveTab,
   apiService,
 }) => {
-  const [currentTruckNumber, setCurrentTruckNumber] = useState(1);
-  const [loadCount, setLoadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
 
   // Data workflow steps
@@ -26,14 +25,14 @@ const WorkContent = ({
       name: 'SPOT',
       subtitle: 'Truck Positioning',
       color: '#FF9800',
-      icon: '🎯',
+      icon: 'target',
     },
     {
       step: 'load',
       name: 'LOAD',
-      subtitle: `Loading ${loadCount}/4`,
-      color: loadCount >= 4 ? '#4CAF50' : '#2196F3',
-      icon: loadCount >= 4 ? '✅' : '⚙️',
+      subtitle: 'Loading Truck',
+      color: '#2196F3',
+      icon: 'loading',
     },
   ];
 
@@ -41,34 +40,18 @@ const WorkContent = ({
     const step = workflowSteps.find(s => s.step === stepName);
     if (!step) return;
 
+    // Prevent clicking same activity that's already running
+    if (isWorkActivityActive(step.name.toUpperCase())) {
+      console.log(`🚫 ${step.name} activity already running, ignoring duplicate click`);
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      if (stepName === 'spot') {
-        if (loadCount > 0) {
-          Alert.alert(
-            'Truck Baru',
-            `Truck #${currentTruckNumber} belum selesai (${loadCount}/4 Load).\n\nMulai truck baru?`,
-            [
-              {text: 'Batal', style: 'cancel'},
-              {text: 'Ya, Truck Baru', onPress: () => startNewTruck()},
-            ],
-          );
-          setIsLoading(false);
-          return;
-        }
-        await startNewTruck();
-      } else if (stepName === 'load') {
-        if (!isWorkActivityActive('SPOT') && loadCount === 0) {
-          Alert.alert(
-            'Error',
-            'Silakan klik SPOT terlebih dahulu untuk truck baru',
-          );
-          setIsLoading(false);
-          return;
-        }
-        await handleLoadClick();
-      }
+      // Simple activity switching - like other tabs
+      await globalData.startGlobalActivity(step.name, step.name, 'work');
+      console.log(`✅ Started ${step.name} activity`);
     } catch (error) {
       console.error('Error handling step:', error);
       Alert.alert('Error', 'Gagal memproses aktivitas');
@@ -77,125 +60,7 @@ const WorkContent = ({
     }
   };
 
-  const startNewTruck = async () => {
-    // Reset counters
-    setLoadCount(0);
-
-    // Start SPOT activity
-    await globalData.startGlobalActivity('SPOT', 'SPOT', 'work');
-
-    console.log(`🚀 Started new truck #${currentTruckNumber} - SPOT activity`);
-  };
-
-  const handleLoadClick = async () => {
-    if (loadCount === 0) {
-      // Switch from SPOT to LOAD activity
-      await globalData.startGlobalActivity('LOAD', 'LOAD', 'work');
-    }
-
-    const newLoadCount = loadCount + 1;
-    setLoadCount(newLoadCount);
-
-    const currentBcm = newLoadCount * 4;
-
-    if (newLoadCount >= 4) {
-      // Truck FULL! Auto complete
-      setTimeout(() => {
-        completeTruckLoading(currentBcm);
-      }, 500);
-    }
-  };
-
-  const completeTruckLoading = async totalBcm => {
-    // Stop current LOAD activity
-    await globalData.stopGlobalActivity(true);
-
-    // Update global loads
-    const newTruckLoads = globalData.workData.loads + 1;
-    const totalBcmAllTrucks = newTruckLoads * 16; // 1 truck = 16 BCM
-    const newProductivity = `${totalBcmAllTrucks} bcm/h`;
-
-    const lastCycleData = {
-      truckNumber: currentTruckNumber,
-      totalGarukan: 4,
-      totalBcm: totalBcm,
-      completedAt:
-        new Date().toLocaleTimeString('en-US', {
-          timeZone: 'Asia/Makassar',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: true,
-        }) + ' WITA',
-    };
-
-    const updatedWorkData = {
-      ...globalData.workData,
-      loads: newTruckLoads,
-      productivity: newProductivity,
-      hours: (newTruckLoads * 0.5).toFixed(2), // Simplified calculation
-      lastCycle: lastCycleData,
-    };
-
-    updateGlobalData({
-      workData: updatedWorkData,
-    });
-
-    Alert.alert(
-      'Truck Full! 🚛',
-      `Truck #${currentTruckNumber} selesai dimuat\n\n✅ 4/4 muatan selesai\n📦 Total muatan: ${totalBcm} BCM\n🏆 Total trucks: ${newTruckLoads}\n📊 Productivity: ${newProductivity}\n\nDigger akan menunggu truck selanjutnya...`,
-      [
-        {
-          text: 'Wait for Next Truck',
-          onPress: async () => {
-            setCurrentTruckNumber(prev => prev + 1);
-            setLoadCount(0);
-
-            // Auto start delay 006 (Wait on Trucks)
-            await globalData.startGlobalActivity(
-              'OPER SHOVEL WAIT ON TRUCKS',
-              '006',
-              'delay',
-            );
-            setActiveTab('delay');
-          },
-        },
-      ],
-    );
-  };
-
-  const resetAllData = () => {
-    Alert.alert(
-      'Reset Data',
-      'Apakah Anda yakin ingin mereset semua data loading?',
-      [
-        {text: 'Batal', style: 'cancel'},
-        {
-          text: 'Ya, Reset',
-          onPress: async () => {
-            // Stop current activity if any
-            if (isWorkActivityActive()) {
-              await globalData.stopGlobalActivity(true);
-            }
-
-            // Reset semua data
-            setCurrentTruckNumber(1);
-            setLoadCount(0);
-
-            updateGlobalData({
-              workData: {
-                loads: 0,
-                productivity: '0 bcm/h',
-                hours: '0.00',
-              },
-            });
-
-            Alert.alert('Success', 'Semua data telah direset');
-          },
-        },
-      ],
-    );
-  };
+  // Removed complex truck loading logic - now using simple activity switching like other tabs
 
   const isWorkActivityActive = (activityName = null) => {
     if (
@@ -212,27 +77,20 @@ const WorkContent = ({
     return true;
   };
 
-  const renderProgressBar = () => {
-    const progress = (loadCount / 4) * 100;
-    return (
-      <View style={styles.progressContainer}>
-        <Text style={styles.progressLabel}>Progress Muatan :</Text>
-        <View style={styles.progressBar}>
-          <View style={[styles.progressFill, {width: `${progress}%`}]} />
-        </View>
-        <Text style={styles.progressText}>
-          {loadCount}/4 muatan ({loadCount * 4} BCM)
-        </Text>
-      </View>
-    );
-  };
+  // Removed progress bar - simplified workflow
 
   const getConnectionStatus = () => {
     if (!globalData.documentNumber) {
       return (
         <View style={styles.offlineIndicator}>
+          <Icon
+            name="wifi-off"
+            size={14}
+            color="#FF9800"
+            style={styles.offlineIcon}
+          />
           <Text style={styles.offlineText}>
-            📡 Offline Mode - Data tersimpan lokal
+            Offline Mode - Data tersimpan lokal
           </Text>
         </View>
       );
@@ -242,7 +100,7 @@ const WorkContent = ({
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      <Text style={styles.title}>Work Management</Text>
+      <Text style={styles.title}>Work Activities</Text>
 
       {/* Connection Status */}
       {getConnectionStatus()}
@@ -255,29 +113,47 @@ const WorkContent = ({
         </View>
       )}
 
-      {/* Current Status */}
-      <View style={styles.statusContainer}>
-        <Text style={styles.statusTitle}>Status Saat Ini</Text>
-        <View style={styles.statusInfo}>
-          <Text style={styles.statusText}>
-            Truck #{currentTruckNumber}
-            {isWorkActivityActive()
-              ? ` - ${globalData.globalActivity.activityName}`
-              : ' - Ready'}
-          </Text>
-          {isWorkActivityActive() && (
-            <Text style={styles.statusTime}>
-              Duration: {globalData.globalActivity.duration}
-            </Text>
-          )}
-          {isWorkActivityActive() && (
-            <Text style={styles.activityText}>
-              🟢 Active: {globalData.globalActivity.activityName}
-            </Text>
-          )}
+      {/* Daily Statistics */}
+      <View style={styles.statisticsContainer}>
+        <View style={styles.statisticsHeader}>
+          <Icon name="chart-bar" size={18} color="#2196F3" />
+          <Text style={styles.statisticsTitle}>Statistik Hari Ini</Text>
         </View>
 
-        {loadCount > 0 && renderProgressBar()}
+        <View style={styles.statisticsGrid}>
+          <View style={styles.statisticsCard}>
+            <Icon name="dump-truck" size={24} color="#4CAF50" />
+            <Text style={styles.statisticsNumber}>
+              {globalData.workData.loads}
+            </Text>
+            <Text style={styles.statisticsLabel}>Total Trucks</Text>
+          </View>
+
+          <View style={styles.statisticsCard}>
+            <Icon name="cube-outline" size={24} color="#FF9800" />
+            <Text style={styles.statisticsNumber}>
+              {globalData.workData.loads * 16}
+            </Text>
+            <Text style={styles.statisticsLabel}>BCM</Text>
+          </View>
+
+          <View style={styles.statisticsCard}>
+            <Icon name="clock-outline" size={24} color="#2196F3" />
+            <Text style={styles.statisticsNumber}>
+              {globalData.workData.hours || '0.00'}
+            </Text>
+            <Text style={styles.statisticsLabel}>Hours</Text>
+          </View>
+        </View>
+
+        <View style={styles.productivityCard}>
+          <Icon name="trending-up" size={16} color="#673AB7" />
+          <Text style={styles.productivityText}>
+            Productivity: {globalData.workData.productivity || '0 bcm/h'}
+          </Text>
+        </View>
+
+        {/* Removed progress bar for simplified workflow */}
       </View>
 
       {/* Workflow Steps Buttons */}
@@ -293,13 +169,15 @@ const WorkContent = ({
                   {backgroundColor: step.color},
                   isWorkActivityActive(step.name.toUpperCase()) &&
                     styles.activeStepButton,
-                  isLoading && styles.disabledButton,
+                  isLoading && !isWorkActivityActive(step.name.toUpperCase()) && styles.disabledButton,
                 ]}
                 onPress={() => handleStepButton(step.step)}
-                disabled={isLoading}
+                disabled={isLoading || isWorkActivityActive(step.name.toUpperCase())}
                 activeOpacity={0.8}>
                 <View style={styles.leftContent}>
-                  <Text style={styles.stepIcon}>{step.icon}</Text>
+                  <View style={styles.iconContainer}>
+                    <Icon name={step.icon} size={28} color="#fff" />
+                  </View>
                   <View style={styles.textContent}>
                     <Text style={styles.stepName}>{step.name}</Text>
                     <Text style={styles.stepSubtitle}>{step.subtitle}</Text>
@@ -322,62 +200,6 @@ const WorkContent = ({
             </View>
           ))}
         </View>
-      </View>
-
-      {/* Statistics */}
-      <View style={styles.statsContainer}>
-        <Text style={styles.statsTitle}>Statistik Hari Ini</Text>
-        <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{globalData.workData.loads}</Text>
-            <Text style={styles.statLabel}>Trucks Loaded</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>
-              {globalData.workData.productivity}
-            </Text>
-            <Text style={styles.statLabel}>Productivity</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{globalData.workData.hours}</Text>
-            <Text style={styles.statLabel}>Working Hours</Text>
-          </View>
-        </View>
-
-        {/* Last Cycle Info */}
-        {globalData.workData.lastCycle && (
-          <View style={styles.lastCycleContainer}>
-            <Text style={styles.lastCycleTitle}>Last Completed Truck:</Text>
-            <Text style={styles.lastCycleText}>
-              Truck #{globalData.workData.lastCycle.truckNumber} -{' '}
-              {globalData.workData.lastCycle.totalBcm} BCM
-            </Text>
-            <Text style={styles.lastCycleTime}>
-              Completed: {globalData.workData.lastCycle.completedAt}
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* Controls */}
-      <View style={styles.controlsContainer}>
-        {isWorkActivityActive() && (
-          <TouchableOpacity
-            style={[styles.stopButton, isLoading && styles.disabledButton]}
-            onPress={() => globalData.stopGlobalActivity(true)}
-            disabled={isLoading}>
-            <Text style={styles.stopButtonText}>
-              {isLoading ? 'Saving...' : 'Stop Current Activity'}
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        <TouchableOpacity
-          style={[styles.resetButton, isLoading && styles.disabledButton]}
-          onPress={resetAllData}
-          disabled={isLoading}>
-          <Text style={styles.resetButtonText}>🔄 Reset All Data</Text>
-        </TouchableOpacity>
       </View>
     </ScrollView>
   );
@@ -403,6 +225,12 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     borderLeftWidth: 4,
     borderLeftColor: '#FF9800',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  offlineIcon: {
+    marginRight: 6,
   },
   offlineText: {
     fontSize: 12,
@@ -425,66 +253,81 @@ const styles = StyleSheet.create({
     color: '#1976D2',
     fontWeight: 'bold',
   },
-  statusContainer: {
-    backgroundColor: '#E8F5E8',
-    padding: 15,
-    borderRadius: 12,
+  // Daily Statistics Styles
+  statisticsContainer: {
+    backgroundColor: '#f8f9fa',
+    padding: 18,
+    borderRadius: 16,
     marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: '#4CAF50',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  statusTitle: {
-    fontSize: 16,
+  statisticsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  statisticsTitle: {
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#2E7D32',
-    marginBottom: 5,
+    color: '#333',
+    marginLeft: 8,
   },
-  statusInfo: {
-    marginBottom: 10,
+  statisticsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 15,
   },
-  statusText: {
-    fontSize: 16,
-    color: '#2E7D32',
+  statisticsCard: {
+    flex: 1,
+    backgroundColor: 'white',
+    padding: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginHorizontal: 4,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  statisticsNumber: {
+    fontSize: 20,
     fontWeight: 'bold',
+    color: '#333',
+    marginTop: 4,
+    marginBottom: 2,
   },
-  statusTime: {
-    fontSize: 14,
+  statisticsLabel: {
+    fontSize: 11,
     color: '#666',
-    marginTop: 5,
-  },
-  activityText: {
-    fontSize: 14,
-    color: '#4CAF50',
-    fontWeight: 'bold',
-    marginTop: 5,
-  },
-  progressContainer: {
-    marginTop: 15,
-  },
-  progressLabel: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#2E7D32',
-    marginBottom: 8,
-  },
-  progressBar: {
-    height: 20,
-    backgroundColor: 'rgba(255,255,255,0.7)',
-    borderRadius: 10,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#4CAF50',
-    borderRadius: 10,
-  },
-  progressText: {
-    fontSize: 12,
-    color: '#2E7D32',
+    fontWeight: '500',
     textAlign: 'center',
-    fontWeight: 'bold',
   },
+  productivityCard: {
+    backgroundColor: 'white',
+    padding: 12,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  productivityText: {
+    fontSize: 14,
+    color: '#673AB7',
+    fontWeight: 'bold',
+    marginLeft: 6,
+  },
+  // Removed progress bar styles - simplified workflow
   stepsContainer: {
     marginBottom: 20,
   },
@@ -504,17 +347,17 @@ const styles = StyleSheet.create({
     marginHorizontal: 3,
   },
   stepButton: {
-    borderRadius: 12,
-    padding: 15,
+    borderRadius: 16,
+    padding: 18,
     minHeight: 120,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 5,
   },
   activeStepButton: {
     borderWidth: 3,
@@ -531,6 +374,13 @@ const styles = StyleSheet.create({
   stepIcon: {
     fontSize: 24,
     marginBottom: 8,
+  },
+  iconContainer: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
   textContent: {
     flex: 1,
@@ -569,91 +419,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: 'bold',
     textAlign: 'center',
-  },
-  statsContainer: {
-    backgroundColor: 'white',
-    padding: 15,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    marginBottom: 20,
-  },
-  statsTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 15,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  statCard: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#4CAF50',
-    marginBottom: 5,
-  },
-  statLabel: {
-    fontSize: 11,
-    color: '#666',
-    textAlign: 'center',
-  },
-  lastCycleContainer: {
-    marginTop: 15,
-    padding: 10,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 8,
-  },
-  lastCycleTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 5,
-  },
-  lastCycleText: {
-    fontSize: 13,
-    color: '#666',
-  },
-  lastCycleTime: {
-    fontSize: 12,
-    color: '#999',
-    fontStyle: 'italic',
-  },
-  controlsContainer: {
-    marginBottom: 20,
-  },
-  stopButton: {
-    backgroundColor: '#F44336',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  stopButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  resetButton: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  resetButtonText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: 'bold',
   },
 });
 

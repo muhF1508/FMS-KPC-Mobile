@@ -10,6 +10,7 @@ import {
   Dimensions,
   StatusBar,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import apiService from '../services/ApiService';
 
 const {width: screenWidth, height: screenHeight} = Dimensions.get('window');
@@ -37,22 +38,22 @@ const GanttChartModal = ({
     setError(null);
 
     try {
-      console.log('📊 Loading Gantt data for session:', sessionNumber);
+      console.log('Loading Gantt data for session:', sessionNumber);
 
       const response = await apiService.getGanttData(sessionNumber);
-      console.log('📊 Raw API response:', response);
+      console.log('Raw API response:', response);
 
       if (response.success) {
-        console.log('📊 Raw data before formatting:', response.data);
+        console.log('Raw data before formatting:', response.data);
         const formattedData = apiService.formatGanttDataForChart(response.data);
-        console.log('📊 Formatted data:', formattedData);
+        console.log('Formatted data:', formattedData);
         setGanttData(formattedData);
-        console.log('✅ Gantt data loaded successfully');
+        console.log('Gantt data loaded successfully');
       } else {
         throw new Error(response.message || 'Failed to load Gantt data');
       }
     } catch (err) {
-      console.error('❌ Error loading Gantt data:', err);
+      console.error('Error loading Gantt data:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -196,7 +197,7 @@ const GanttChartModal = ({
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerInfo}>
-              <Text style={styles.title}>📊 Activity Timeline</Text>
+              <Text style={styles.title}><Icon name="chart-timeline-variant" size={20} color="#333" /> Activity Timeline</Text>
               <Text style={styles.subtitle}>
                 {operatorName} • {shiftType} Shift ({shiftLabel})
               </Text>
@@ -205,7 +206,7 @@ const GanttChartModal = ({
               </Text>
             </View>
             <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-              <Text style={styles.closeText}>✕</Text>
+              <Icon name="close" size={18} color="#666" />
             </TouchableOpacity>
           </View>
 
@@ -216,7 +217,7 @@ const GanttChartModal = ({
             bounces={false}>
             {error ? (
               <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>❌ {error}</Text>
+                <Text style={styles.errorText}><Icon name="alert-circle" size={16} color="#F44336" /> {error}</Text>
                 <TouchableOpacity
                   style={styles.retryButton}
                   onPress={loadGanttData}>
@@ -316,7 +317,7 @@ const GanttChartModal = ({
                 {/* Summary Statistics */}
                 {ganttData.summary && ganttData.summary.length > 0 && (
                   <View style={styles.summaryContainer}>
-                    <Text style={styles.summaryTitle}>📈 Category Summary</Text>
+                    <Text style={styles.summaryTitle}><Icon name="chart-bar" size={16} color="#333" /> Category Summary</Text>
                     <View style={styles.summaryGrid}>
                       {calculateSummaryPercentages(ganttData.summary).map(
                         (item, index) => (
@@ -356,7 +357,7 @@ const GanttChartModal = ({
                   ganttData.chronologicalDetails.length > 0 && (
                     <View style={styles.chronologicalContainer}>
                       <Text style={styles.chronologicalTitle}>
-                        📝 Detail Aktivitas
+                        <Icon name="format-list-numbered" size={16} color="#333" /> Detail Aktivitas
                       </Text>
                       <View style={styles.chronologicalList}>
                         {ganttData.chronologicalDetails.map(
@@ -418,7 +419,8 @@ const GanttChartModal = ({
             ) : (
               <View style={styles.noDataContainer}>
                 <Text style={styles.noDataText}>
-                  📊 No timeline data available
+                  <Icon name="chart-timeline-variant" size={48} color="#666" />
+                  {"\n"}No timeline data available
                 </Text>
                 <Text style={styles.noDataSubtext}>
                   Start working to see your activity timeline
@@ -433,7 +435,7 @@ const GanttChartModal = ({
               style={styles.refreshButton}
               onPress={loadGanttData}
               disabled={loading}>
-              <Text style={styles.refreshText}>🔄 Refresh</Text>
+              <Text style={styles.refreshText}><Icon name="refresh" size={16} color="white" /> Refresh</Text>
             </TouchableOpacity>
 
             <TouchableOpacity

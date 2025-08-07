@@ -4,7 +4,6 @@
 
 import SQLite from 'react-native-sqlite-storage';
 import NetInfo from '@react-native-community/netinfo';
-import apiService from './ApiService';
 
 SQLite.DEBUG(true);
 SQLite.enablePromise(true);
@@ -489,10 +488,13 @@ class SQLiteService {
       const data = JSON.parse(item.data_json);
 
       if (item.table_name === 'fms_session_hm_offline') {
-        // FIX: Use correct method signature for apiService.createSession
+        // Lazy import to avoid circular dependency
+        const { default: apiService } = await import('./ApiService');
         const result = await apiService.createSession(data);
         return result.success;
       } else if (item.table_name === 'fms_timer_trans_offline') {
+        // Lazy import to avoid circular dependency  
+        const { default: apiService } = await import('./ApiService');
         const result = await apiService.saveActivity(data);
         return result.success;
       }

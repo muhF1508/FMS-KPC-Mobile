@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(adb shell:*)",
+      "Bash(adb shell am start:*)",
+      "Bash(npm install:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(copy \"node_modules\\react-native-vector-icons\\Fonts\\MaterialCommunityIcons.ttf\" \"android\\app\\src\\main\\assets\\fonts\"\")",
+      "Bash(cp:*)",
+      "Bash(./gradlew:*)"
+    ],
+    "deny": []
+  }
+}

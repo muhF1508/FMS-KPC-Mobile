@@ -11,6 +11,7 @@ import {
   StatusBar,
   Dimensions,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import SessionHistoryService from '../services/SessionHistoryService';
 import GanttChartModal from './GanttChartModal';
 
@@ -75,7 +76,11 @@ const SessionHistoryModal = ({visible, onClose}) => {
               },
             ]}>
             <Text style={styles.shiftText}>
-              {item.shiftType === 'DAY' ? '🌅 DAY' : '🌙 NIGHT'}
+              <Icon 
+                name={item.shiftType === 'DAY' ? 'weather-sunny' : 'weather-night'} 
+                size={10} 
+                color="white" 
+              /> {item.shiftType}
             </Text>
           </View>
         </View>
@@ -151,7 +156,7 @@ const SessionHistoryModal = ({visible, onClose}) => {
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Text style={styles.emptyIcon}>📝</Text>
+      <Icon name="clipboard-text-outline" size={48} color="#999" />
       <Text style={styles.emptyTitle}>No Session History</Text>
       <Text style={styles.emptyText}>
         Complete sessions will apear here for the last 5 days
@@ -194,13 +199,13 @@ const SessionHistoryModal = ({visible, onClose}) => {
             {/* Header */}
             <View style={styles.header}>
               <View style={styles.headerInfo}>
-                <Text style={styles.title}>📚 Session History</Text>
+                <Text style={styles.title}><Icon name="history" size={20} color="#333" /> Session History</Text>
                 <Text style={styles.subtitle}>
                   Last 5 days • {sessionHistory.length} sessions
                 </Text>
               </View>
               <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                <Text style={styles.closeText}>✕</Text>
+                <Icon name="close" size={18} color="#666" />
               </TouchableOpacity>
             </View>
 
@@ -224,7 +229,7 @@ const SessionHistoryModal = ({visible, onClose}) => {
               <TouchableOpacity
                 style={styles.refreshButton}
                 onPress={loadSessionHistory}>
-                <Text style={styles.refreshText}>🔄 Refresh</Text>
+                <Text style={styles.refreshText}><Icon name="refresh" size={16} color="white" /> Refresh</Text>
               </TouchableOpacity>
             </View>
           </View>

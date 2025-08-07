@@ -13,6 +13,7 @@ import {
   ScrollView,
 } from 'react-native';
 import RNPickerSelect from 'react-native-picker-select';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import apiService from '../../services/ApiService';
 import SessionHistoryModal from '../../components/SessionHistoryModal';
 
@@ -55,8 +56,8 @@ const LoginScreen = ({navigation}) => {
 
   // NEW: Shift type options
   const shiftTypes = [
-    {label: '🌅 Day Shift (06:00 - 18:00)', value: 'DAY'},
-    {label: '🌙 Night Shift (18:00 - 06:00)', value: 'NIGHT'},
+    {label: 'Day Shift (06:00 - 18:00)', value: 'DAY', icon: 'weather-sunny'},
+    {label: 'Night Shift (18:00 - 06:00)', value: 'NIGHT', icon: 'weather-night'},
   ];
 
   // Test API connection on component mount
@@ -390,11 +391,22 @@ const LoginScreen = ({navigation}) => {
   const getServerStatusText = () => {
     switch (serverStatus) {
       case 'online':
-        return '🟢 Server Online';
+        return 'Server Online';
       case 'offline':
-        return '🔴 Server Offline';
+        return 'Server Offline';
       default:
-        return '🟡 Checking...';
+        return 'Checking...';
+    }
+  };
+
+  const getServerStatusIcon = () => {
+    switch (serverStatus) {
+      case 'online':
+        return 'check-circle';
+      case 'offline':
+        return 'close-circle';
+      default:
+        return 'clock';
     }
   };
 
@@ -431,20 +443,28 @@ const LoginScreen = ({navigation}) => {
             style={styles.historyButton}
             onPress={() => setShowSessionHistory(true)}
             activeOpacity={0.7}>
-            <Text style={styles.historyButtonText}>📚</Text>
+            <Icon name="history" size={16} color="#2196F3" />
             <Text style={styles.historyButtonLabel}>History</Text>
           </TouchableOpacity>
         </View>
         {/* Server Status Indicator */}
         <View style={styles.serverStatusContainer}>
-          <Text
-            style={[styles.serverStatusText, {color: getServerStatusColor()}]}>
-            {getServerStatusText()}
-          </Text>
+          <View style={styles.serverStatusContent}>
+            <Icon 
+              name={getServerStatusIcon()} 
+              size={12} 
+              color={getServerStatusColor()} 
+              style={styles.serverStatusIconStyle}
+            />
+            <Text
+              style={[styles.serverStatusText, {color: getServerStatusColor()}]}>
+              {getServerStatusText()}
+            </Text>
+          </View>
           <TouchableOpacity
             style={styles.retryButton}
             onPress={testApiConnection}>
-            <Text style={styles.retryButtonText}>↻</Text>
+            <Icon name="refresh" size={14} color="#666" />
           </TouchableOpacity>
         </View>
 
@@ -462,10 +482,17 @@ const LoginScreen = ({navigation}) => {
         {formData.shiftType && shiftInfo && (
           <View style={styles.shiftInfoContainer}>
             <View style={styles.shiftInfoHeader}>
-              <Text style={styles.shiftInfoTitle}>
-                {formData.shiftType === 'DAY' ? '🌅' : '🌙'}{' '}
-                {formData.shiftType} Shift
-              </Text>
+              <View style={styles.shiftTitleContainer}>
+                <Icon 
+                  name={formData.shiftType === 'DAY' ? 'weather-sunny' : 'weather-night'}
+                  size={20} 
+                  color={formData.shiftType === 'DAY' ? '#FF9800' : '#3F51B5'}
+                  style={styles.shiftIcon}
+                />
+                <Text style={styles.shiftInfoTitle}>
+                  {formData.shiftType} Shift
+                </Text>
+              </View>
               <Text style={styles.shiftInfoTime}>
                 {shiftInfo.startTime} - {shiftInfo.endTime}
               </Text>
@@ -604,22 +631,42 @@ const LoginScreen = ({navigation}) => {
             {/* NEW: Shift Type Picker */}
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>Jenis Shift:</Text>
-              <RNPickerSelect
-                onValueChange={handleShiftTypeChange}
-                items={getShiftTypes()}
-                placeholder={{
-                  label: 'Pilih Jenis Shift',
-                  value: null,
-                  color: '#999',
-                }}
-                value={formData.shiftType}
-                style={pickerSelectStyles}
-                useNativeAndroidPickerStyle={false}
-                fixAndroidTouchableBug={true}
-                Icon={() => {
-                  return <Text style={styles.dropdownArrow}>▼</Text>;
-                }}
-              />
+              <View style={styles.shiftPickerContainer}>
+                <RNPickerSelect
+                  onValueChange={handleShiftTypeChange}
+                  items={getShiftTypes()}
+                  placeholder={{
+                    label: 'Pilih Jenis Shift',
+                    value: null,
+                    color: '#999',
+                  }}
+                  value={formData.shiftType}
+                  style={{
+                    ...pickerSelectStyles,
+                    inputAndroid: {
+                      ...pickerSelectStyles.inputAndroid,
+                      paddingLeft: formData.shiftType ? 50 : 16, // Add left padding when icon is shown
+                    },
+                    inputIOS: {
+                      ...pickerSelectStyles.inputIOS,
+                      paddingLeft: formData.shiftType ? 50 : 16, // Add left padding when icon is shown
+                    }
+                  }}
+                  useNativeAndroidPickerStyle={false}
+                  fixAndroidTouchableBug={true}
+                  Icon={() => {
+                    return <Icon name="chevron-down" size={20} color="#666" style={styles.pickerIcon} />;
+                  }}
+                />
+                {formData.shiftType && (
+                  <Icon 
+                    name={formData.shiftType === 'DAY' ? 'weather-sunny' : 'weather-night'}
+                    size={18} 
+                    color={formData.shiftType === 'DAY' ? '#FF9800' : '#3F51B5'}
+                    style={styles.shiftSelectedIcon}
+                  />
+                )}
+              </View>
             </View>
 
             <TouchableOpacity
@@ -639,7 +686,10 @@ const LoginScreen = ({navigation}) => {
               style={styles.resetButton}
               onPress={resetForm}
               activeOpacity={0.8}>
-              <Text style={styles.resetButtonText}>🔄 Reset</Text>
+              <View style={styles.resetButtonContent}>
+                <Icon name="refresh" size={16} color="#666" style={styles.resetIcon} />
+                <Text style={styles.resetButtonText}>Reset</Text>
+              </View>
             </TouchableOpacity>
           </View>
         ) : (
@@ -745,20 +795,21 @@ const styles = StyleSheet.create({
     zIndex: 1000,
   },
   historyButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 25,
     flexDirection: 'row',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: {width: 0, height: 3},
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(33, 150, 243, 0.2)',
   },
-  historyButtonText: {
-    fontSize: 16,
+  historyButtonIcon: {
     marginRight: 4,
   },
   historyButtonLabel: {
@@ -773,6 +824,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 15,
     paddingTop: 10,
+  },
+  serverStatusContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  serverStatusIconStyle: {
+    marginRight: 4,
   },
   serverStatusText: {
     fontSize: 12,
@@ -815,11 +873,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
+  shiftTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  shiftIcon: {
+    marginRight: 8,
+  },
   shiftInfoTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#1976D2',
-    marginBottom: 4,
   },
   shiftInfoTime: {
     fontSize: 14,
@@ -854,21 +919,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 20,
-    gap: 15,
+    gap: 12,
   },
   actionBtn: {
     flex: 1,
-    paddingVertical: 15,
-    borderRadius: 8,
+    paddingVertical: 16,
+    borderRadius: 12,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 4,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 5,
   },
   safetyTalkBtn: {
     backgroundColor: '#4CAF50',
@@ -881,8 +946,10 @@ const styles = StyleSheet.create({
   },
   actionBtnText: {
     color: 'white',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 'bold',
+    textAlign: 'center',
+    letterSpacing: 0.5,
   },
   selectedBtn: {
     opacity: 0.8,
@@ -913,17 +980,19 @@ const styles = StyleSheet.create({
   // Forms
   actionForm: {
     backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 25,
+    borderRadius: 16,
+    padding: 28,
     marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.05)',
   },
   loginForm: {
     backgroundColor: 'white',
@@ -963,25 +1032,48 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
+    borderWidth: 1.5,
+    borderColor: '#e0e0e0',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     fontSize: 16,
-    backgroundColor: '#fafafa',
+    backgroundColor: '#f8f9fa',
+    color: '#333',
+    fontWeight: '500',
   },
   dropdownArrow: {
     fontSize: 12,
     color: '#666',
   },
+  // Enhanced shift picker styles
+  shiftPickerContainer: {
+    position: 'relative',
+  },
+  pickerIcon: {
+    position: 'absolute',
+    right: 15,
+    top: 12,
+    zIndex: 1,
+  },
+  shiftSelectedIcon: {
+    position: 'absolute',
+    left: 15,
+    top: 12,
+    zIndex: 1,
+  },
   // Buttons
   submitButton: {
     backgroundColor: '#2196F3',
-    borderRadius: 8,
-    paddingVertical: 15,
+    borderRadius: 12,
+    paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 24,
+    shadowColor: '#2196F3',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
   submitButtonDisabled: {
     backgroundColor: '#ccc',
@@ -993,13 +1085,26 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   resetButton: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingVertical: 15,
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1.5,
+    borderColor: '#e0e0e0',
+    borderRadius: 12,
+    paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 12,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  resetButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resetIcon: {
+    marginRight: 4,
   },
   resetButtonText: {
     color: '#666',
